@@ -156,25 +156,6 @@ class ComponentModel:
             return -1e100
         return -res.fun
 
-    def loglike_poisson_full(self, component_shapes, norms):
-        """Return full Poisson likelihood.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
-        norms: array
-            normalisations, one value for each model component.
-
-        Returns
-        -------
-        loglike: float
-            log-likelihood
-        """
-        ypred = norms @ component_shapes
-        loglike = np.sum(self.flat_data * log(ypred) - ypred)
-        return loglike
-
     def norms_poisson(self, component_shapes):
         """Return optimal normalisations.
 
@@ -292,25 +273,6 @@ class ComponentModel:
         else:
             penalty = 0
         return loglike + penalty
-
-    def loglike_gauss_full(self, component_shapes, norms):
-        """Return full Gaussian likelihood.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
-        norms: array
-            normalisations, one value for each model component.
-
-        Returns
-        -------
-        loglike: float
-            log-likelihood
-        """
-        ypred = norms @ component_shapes
-        loglike = -0.5 * np.sum((ypred - self.flat_data) ** 2 * self.flat_invvar)
-        return loglike
 
     def norms_gauss(self, component_shapes):
         """Return optimal normalisations.
