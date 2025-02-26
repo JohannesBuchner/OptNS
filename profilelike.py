@@ -342,6 +342,35 @@ def test_gauss():
     plt.close()
 
 
+def test_poisson_verylowcount():
+    from scipy.stats import poisson
+    x = np.ones(1)
+    A = 0 * x + 1
+    rng = np.random.RandomState(42)
+    X = np.transpose([A])
+    for ncounts in 0, 1, 2, 3, 4, 5, 10, 20, 40, 100:
+        data = np.array([ncounts])
+        statmodel = ComponentModel(1, data)
+        samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 1000000, rng)
+        assert np.all(samples > 0)
+        Nsamples = len(samples)
+        assert samples.shape == (Nsamples, 1), samples.shape
+        assert loglike_proposal.shape == (Nsamples,)
+        assert loglike_target.shape == (Nsamples,)
+        # plot 
+        import matplotlib.pyplot as plt
+        bins = np.linspace(0, samples.max(), 200)
+        plt.figure()
+        plt.hist(samples[:,0], density=True, histtype='step', bins=bins, color='grey', ls='--')
+        weight = exp(loglike_target - loglike_proposal - np.max(loglike_target - loglike_proposal))
+        weight /= weight.sum()
+        N, _, _ = plt.hist(samples[:,0], density=True, weights=weight, histtype='step', bins=bins, color='k')
+        logl = poisson.logpmf(ncounts, bins)
+        plt.plot(bins, np.exp(logl - logl.max()) * N.max(), drawstyle='steps-mid')
+        plt.savefig(f'testpoissonprofilelike{ncounts}.pdf')
+        plt.close()
+
+
 def test_poisson_lowcount():
     x = np.linspace(0, 10, 400)
     A = 0 * x + 1
