@@ -67,7 +67,7 @@ class ComponentModel:
     linearly added with non-negative normalisations.
     """
 
-    def __init__(self, Ncomponents, flat_data, flat_invvar=None):
+    def __init__(self, Ncomponents, flat_data, flat_invvar=None, positive=True):
         """Initialise.
 
         Parameters
@@ -82,6 +82,8 @@ class ComponentModel:
             For the Gaussian likelihood function, the inverse variance,
             `1 / (standard_deviation)^2`, where standard_deviation
             are the measurement uncertainties.
+        positive: bool
+            whether Gaussian normalisations must be positive.
         """
         (self.Ndata,) = flat_data.shape
         self.flat_data = flat_data
@@ -93,7 +95,8 @@ class ComponentModel:
         self.poisson_guess_model_offset = 0.1
         self.minimize_kwargs = dict(method="L-BFGS-B")
         self.cond_threshold = 1e6
-        self.gauss_reg = LinearRegression(positive=True, fit_intercept=False)
+        self.positive = positive
+        self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
 
     def loglike_poisson_optimize(self, component_shapes):
         """Optimize the normalisations assuming a Poisson Additive Model.
@@ -184,7 +187,8 @@ class ComponentModel:
         -------
         samples: array
             list of sampled normalisations. May be fewer than
-            `size`, because negative normalisations are discarded.
+            `size`, because negative normalisations are discarded
+            if ComponentModel was initialized with positive=True.
         loglike_proposal: array
             for each sample, the importance sampling log-probability
         loglike_target: array
@@ -203,8 +207,11 @@ class ComponentModel:
         FIM = X.T @ D @ X
         covariance = np.linalg.inv(FIM)
         samples_all = rng.multivariate_normal(mean, covariance, size=size)
-        mask = np.all(samples_all > 0, axis=1)
-        samples = samples_all[mask, :]
+        if self.positive:
+            mask = np.all(samples_all > 0, axis=1)
+            samples = samples_all[mask, :]
+        else:
+            samples = samples_all
         # compute Poisson and Gaussian likelihood of these samples:
         rv = multivariate_normal(mean, covariance)
         # proposal probability: Gaussian
@@ -301,7 +308,13 @@ class ComponentModel:
         W = self.invvar_matrix
         XTWX = X.T @ W @ X
         covariance = np.linalg.inv(XTWX)
-        return rng.multivariate_normal(mean, covariance, size=size)
+        samples_all = rng.multivariate_normal(mean, covariance, size=size)
+        if self.positive:
+            mask = np.all(samples_all > 0, axis=1)
+            samples = samples_all[mask, :]
+        else:
+            samples = samples_all
+        return samples
 
 
 def test_gauss():
