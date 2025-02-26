@@ -87,8 +87,8 @@ class ComponentModel:
         """
         (self.Ndata,) = flat_data.shape
         self.flat_data = flat_data
-        if flat_invvar is not None:
-            self.flat_invvar = flat_invvar
+        self.flat_invvar = flat_invvar
+        if self.flat_invvar is not None:
             self.invvar_matrix = np.diag(self.flat_invvar)
         self.Ncomponents = Ncomponents
         self.poisson_guess_data_offset = 0.1
@@ -116,7 +116,13 @@ class ComponentModel:
             (self.Ndata, self.Ncomponents),
         )
         X = component_shapes
+        assert np.isfinite(X).all()
+        assert np.any(X > 0, axis=0).all()
+        assert np.any(X > 0, axis=1).all()
+        if self.positive:
+            assert np.all(X >= 0).all(), X
         y = self.flat_data
+        assert np.isfinite(y).all(), y
         offy = self.poisson_guess_data_offset
         offX = self.poisson_guess_model_offset
         x0 = np.log(
@@ -125,6 +131,7 @@ class ComponentModel:
                 axis=0,
             )
         )
+        assert np.isfinite(x0).all(), (x0, y, offy, X, offX)
         res = minimize(
             poisson_negloglike, x0, args=(X, y),
             **self.minimize_kwargs)
@@ -146,8 +153,27 @@ class ComponentModel:
         res = self.loglike_poisson_optimize(component_shapes)
         if not res.success:
             # give penalty when ill-defined
-            return -1e100 + -res.fun
+            return -1e100
         return -res.fun
+
+    def loglike_poisson_full(self, component_shapes, norms):
+        """Return full Poisson likelihood.
+
+        Parameters
+        ----------
+        component_shapes: array
+            transposed list of the model component vectors.
+        norms: array
+            normalisations, one value for each model component.
+
+        Returns
+        -------
+        loglike: float
+            log-likelihood
+        """
+        ypred = norms @ component_shapes
+        loglike = np.sum(self.flat_data * log(ypred) - ypred)
+        return loglike
 
     def norms_poisson(self, component_shapes):
         """Return optimal normalisations.
@@ -266,6 +292,25 @@ class ComponentModel:
         else:
             penalty = 0
         return loglike + penalty
+
+    def loglike_gauss_full(self, component_shapes, norms):
+        """Return full Gaussian likelihood.
+
+        Parameters
+        ----------
+        component_shapes: array
+            transposed list of the model component vectors.
+        norms: array
+            normalisations, one value for each model component.
+
+        Returns
+        -------
+        loglike: float
+            log-likelihood
+        """
+        ypred = norms @ component_shapes
+        loglike = -0.5 * np.sum((ypred - self.flat_data) ** 2 * self.flat_invvar)
+        return loglike
 
     def norms_gauss(self, component_shapes):
         """Return optimal normalisations.
@@ -395,7 +440,6 @@ def test_poisson_lowcount():
     data = rng.poisson(model)
 
     X = np.transpose([A, B, C])
-    y = data
     def minfunc(lognorms):
         lam = np.exp(lognorms) @ X.T
         loglike = data * np.log(lam) - lam
@@ -451,7 +495,6 @@ def test_poisson_highcount():
     data = rng.poisson(model)
 
     X = np.transpose([A, B, C])
-    y = data
     def minfunc(lognorms):
         lam = np.exp(lognorms) @ X.T
         loglike = data * np.log(lam) - lam
