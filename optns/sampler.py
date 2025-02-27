@@ -1,6 +1,5 @@
 import numpy as np
 import tqdm
-from numpy import log
 from ultranest import ReactiveNestedSampler
 
 from .profilelike import ComponentModel
@@ -176,13 +175,6 @@ class OptNS:
         y_pred = linear_params @ X.T
         assert (y_pred > 0).any(axis=1).all()
         assert (y_pred > 0).any(axis=0).all()
-        # print('sampler:', y_pred.shape)
-        if self.statmodel.flat_invvar is not None:
-            #logl_t = loglike_target # np.sum(self.statmodel.flat_data * log(y_pred) - y_pred, axis=1)
-            loglike_target = -0.5 * np.sum(
-                ((y_pred - self.statmodel.flat_data) * self.statmodel.flat_invvar) ** 2,
-                axis=1,
-            )
         logprior = self.linear_param_logprior(linear_params)
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
         params[:, :Nlinear] = linear_params

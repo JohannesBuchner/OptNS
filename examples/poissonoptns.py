@@ -1,11 +1,13 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import corner
-from optns import OptNS
+from optns.sampler import OptNS
 
 # first we generate some mock data:
 
-x = np.linspace(0, 10, 400)
+Ndata = int(os.environ.get('NDATA', '400'))
+x = np.linspace(0, 10, Ndata)
 A = 0 * x + 1
 B = x
 C = np.sin(x + 2)**2
@@ -13,7 +15,6 @@ model = 3 * A + 0.5 * B + 5 * C
 
 rng = np.random.RandomState(42)
 data = rng.poisson(model)
-Ndata = len(data)
 plt.figure(figsize=(15, 6))
 plt.plot(x, model)
 plt.scatter(x, data)
@@ -71,7 +72,7 @@ optsampler.plot()
 
 # now for postprocessing the results, we want to get the full posterior:
 # this samples up to 1000 normalisations for each nonlinear posterior sample:
-fullsamples, weights, y_preds = statmodel.get_weighted_samples(1000)
+fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 1000)
 print(f'Obtained {len(fullsamples)} weighted posterior samples')
 
 # to obtain equally weighted samples, we resample

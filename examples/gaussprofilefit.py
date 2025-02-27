@@ -4,7 +4,7 @@ import tqdm
 import corner
 from ultranest import ReactiveNestedSampler
 
-x = np.linspace(0, 10, 400)
+x = np.linspace(0, 10, 40)
 A = 0 * x + 1
 B = x
 C = np.sin(x + 2)**2
@@ -26,20 +26,20 @@ def transform(cube):
     params[1] = cube[1] * 10             # incline strength
     params[2] = 10**(cube[2] * 10 - 5)   # sine amplitude
     params[3] = 10**(cube[3] * 2 - 0.5)    # sine frequency
-    params[4] = cube[4] * 2 * np.pi      # offset
+    params[4] = cube[4] * np.pi      # offset
     params[5] = cube[5] * 10             # power
     return params
 
 def compute_model_components(params):
     freq, phase, p = params
     periodic_signal = np.sin(2 * np.pi * x / freq + phase)
-    periodic_power_signal = np.sign(periodic_signal) * np.abs(periodic_signal)**p
+    periodic_power_signal = np.abs(periodic_signal)**p
     return np.transpose([A, B, periodic_power_signal])
 
 def loglikelihood_simple(params):
     a, b, c, freq, phase, p = params
     periodic_signal = np.sin(2 * np.pi * x / freq + phase)
-    periodic_power_signal = np.sign(periodic_signal) * np.abs(periodic_signal)**p
+    periodic_power_signal = np.abs(periodic_signal)**p
     y_pred = a * A + b * B + c * periodic_power_signal
     return -0.5 * np.sum(((y_pred - data) / noise)**2)
 
@@ -48,14 +48,14 @@ def loglikelihood(params):
     y_pred = params[:3] @ compute_model_components(params[3:]).T
     return -0.5 * np.sum(((y_pred - data) / noise)**2)
 
-from profilelike import ComponentModel
+from optns.profilelike import ComponentModel
 
 statmodel = ComponentModel(3, data, noise**-2)
 
 def opttransform(cube):
     params = cube.copy()
     params[0] = 10**(cube[0] * 2 - 0.5)    # sine frequency
-    params[1] = cube[1] * 2 * np.pi      # offset
+    params[1] = cube[1] * np.pi      # offset
     params[2] = cube[2] * 10      # power
     return params
 
@@ -79,16 +79,15 @@ def optloglikelihood(nonlinear_params):
 
 def optlinearsample(nonlinear_params, size):
     X = compute_model_components(nonlinear_params)
-    logl_profile = statmodel.loglike_gauss(X)
-    linear_params = statmodel.sample_gauss(X, size)
+    linear_params, loglike_proposal, loglike_target = statmodel.sample_gauss(X, size)
     Nsamples, Nlinear = linear_params.shape
     y_pred = linear_params @ X.T
-    logl_full = -0.5 * np.sum(((y_pred - data) / noise)**2, axis=1)
+    # logl_full = -0.5 * np.sum(((y_pred - data) / noise)**2, axis=1)
     logprior = opt_linearparam_logprior(linear_params)
     params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
     params[:, :Nlinear] = linear_params
     params[:, Nlinear:] = nonlinear_params.reshape((1, -1))
-    return y_pred, params, logl_full + logprior - logl_profile - np.log(Nsamples)
+    return y_pred, params, loglike_target + logprior - loglike_proposal - np.log(Nsamples)
 
 linear_param_names = ['a', 'b', 'c']
 nonlinear_param_names = ['f', 'phi', 'pow']

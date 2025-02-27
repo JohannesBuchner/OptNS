@@ -1,20 +1,23 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import corner
-from optns import OptNS
+from optns.sampler import OptNS
+
+SNR = int(os.environ.get('SNR', '1'))
+Ndata = int(os.environ.get('NDATA', '40'))
 
 # first we generate some mock data:
 
-x = np.linspace(0, 3, 40)
+x = np.linspace(0, 10, Ndata)
 A = 0 * x + 1
 B = x
 C = np.sin(x + 2)**2
-model = 3 * A + 0.5 * B + 5 * C
+model = (3 * A + 0.5 * B + 5 * C) * SNR
 noise = 0.5 + 0.1 * x
 
 rng = np.random.RandomState(42)
 data = rng.normal(model, noise)
-Ndata = len(data)
 plt.figure(figsize=(15, 6))
 plt.plot(x, model)
 plt.errorbar(x, data, noise, capsize=2, elinewidth=0.5, linestyle=' ')
@@ -29,14 +32,14 @@ nonlinear_param_names = ['f', 'phi', 'pow']
 def compute_model_components(params):
     freq, phase, p = params
     periodic_signal = np.sin(2 * np.pi * x / freq + phase)
-    periodic_power_signal = np.sign(periodic_signal) * np.abs(periodic_signal)**p
+    periodic_power_signal = np.abs(periodic_signal)**p
     return np.transpose([A, B, periodic_power_signal])
 
 # set up a prior transform for these nonlinear parameters
 def nonlinear_param_transform(cube):
     params = cube.copy()
     params[0] = 10**(cube[0] * 2 - 0.5)    # sine frequency
-    params[1] = cube[1] * 2 * np.pi      # offset
+    params[1] = cube[1] * np.pi      # offset
     params[2] = cube[2] * 10      # power
     return params
 
@@ -72,7 +75,7 @@ optsampler.plot()
 
 # now for postprocessing the results, we want to get the full posterior:
 # this samples up to 1000 normalisations for each nonlinear posterior sample:
-fullsamples, weights, y_preds = statmodel.get_weighted_samples(1000)
+fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 1000)
 print(f'Obtained {len(fullsamples)} weighted posterior samples')
 
 # to obtain equally weighted samples, we resample

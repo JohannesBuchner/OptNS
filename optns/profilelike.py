@@ -121,7 +121,7 @@ class ComponentModel:
         assert np.any(X > 0, axis=0).all()
         assert np.any(X > 0, axis=1).all()
         if self.positive:
-            assert np.all(X >= 0).all(), X
+            assert np.all(X >= 0), X
         y = self.flat_data
         assert np.isfinite(y).all(), y
         offy = self.poisson_guess_data_offset
@@ -223,13 +223,13 @@ class ComponentModel:
         # print('cov:', covariance)
         try:
             rv = multivariate_normal(mean, covariance)
-            samples_all = rv.rvs(size=size, random_state=rng)
+            samples_all = rv.rvs(size=size, random_state=rng).reshape((size, len(mean)))
             rv_logpdf = rv.logpdf
         except np.linalg.LinAlgError:
             stdev = np.diag(covariance)**0.5
             #covariance = np.diag(np.diag(covariance) + 1e-20)
             rv = norm(mean, stdev)
-            samples_all = rng.normal(mean, stdev, size=(size, len(mean)))
+            samples_all = rng.normal(mean, stdev, size=(size, len(mean))).reshape((size, len(mean)))
             rv_logpdf = lambda x: rv.logpdf(x).sum(axis=1)
             # print('using mean field with stdev:', stdev)
             #return np.empty((0, len(mean))), np.empty((0,)), np.empty((0,))

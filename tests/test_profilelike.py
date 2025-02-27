@@ -63,7 +63,7 @@ def test_gauss():
     loglike_manual = -0.5 * np.sum((y - y_model)**2 * sample_weight)
     np.testing.assert_allclose(norms_inferred, reg.coef_)
     np.testing.assert_allclose(logl, loglike_manual)
-    samples = statmodel.sample_gauss(X, 10000, rng)
+    samples, _, _ = statmodel.sample_gauss(X, 10000, rng)
     assert np.all(samples > 0)
     # plot 
     plt.figure(figsize=(15, 6))
