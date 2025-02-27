@@ -3,7 +3,7 @@ import tqdm
 from numpy import log
 from ultranest import ReactiveNestedSampler
 
-from profilelike import ComponentModel
+from .profilelike import ComponentModel
 
 
 def ess(w):

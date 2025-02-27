@@ -1,0 +1,7 @@
+[project]
+name = "optns"
+version = "0.1.0"
+description = "Optimized Nested Sampling: fast inference for non-linear additive models"
+readme = "README.rst"
+requires-python = ">=3.8"
+dependencies = []
