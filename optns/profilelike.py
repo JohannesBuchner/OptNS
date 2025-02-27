@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import exp, log
 from scipy.optimize import minimize
-from scipy.stats import multivariate_normal
+from scipy.stats import multivariate_normal, norm
 from sklearn.linear_model import LinearRegression
 
 
@@ -95,6 +95,7 @@ class ComponentModel:
         self.poisson_guess_model_offset = 0.1
         self.minimize_kwargs = dict(method="L-BFGS-B")
         self.cond_threshold = 1e6
+        self.poisson_cov_diagonal = 1e-10
         self.positive = positive
         self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
 
@@ -204,6 +205,7 @@ class ComponentModel:
         res = self.loglike_poisson_optimize(component_shapes)
         X = component_shapes
         profile_loglike = -res.fun
+        assert np.isfinite(profile_loglike), res
         # get mean
         counts = self.flat_data
         lognorms = res.x
@@ -213,19 +215,44 @@ class ComponentModel:
         # Compute the Fisher Information Matrix
         FIM = X.T @ D @ X
         covariance = np.linalg.inv(FIM)
-        samples_all = rng.multivariate_normal(mean, covariance, size=size)
+        # print(mean, np.diag(covariance)**0.5)
+        #covariance = np.diag(np.diag(covariance) * 0.01 + self.poisson_cov_diagonal)
+        #covariance += np.diag(0 * mean + self.poisson_cov_diagonal)
+        # print('mean:', mean)
+        # print('stdev:', np.diag(covariance)**0.5)
+        # print('cov:', covariance)
+        try:
+            rv = multivariate_normal(mean, covariance)
+            samples_all = rv.rvs(size=size, random_state=rng)
+            rv_logpdf = rv.logpdf
+        except np.linalg.LinAlgError:
+            stdev = np.diag(covariance)**0.5
+            #covariance = np.diag(np.diag(covariance) + 1e-20)
+            rv = norm(mean, stdev)
+            samples_all = rng.normal(mean, stdev, size=(size, len(mean)))
+            rv_logpdf = lambda x: rv.logpdf(x).sum(axis=1)
+            # print('using mean field with stdev:', stdev)
+            #return np.empty((0, len(mean))), np.empty((0,)), np.empty((0,))
+        #rv = multivariate_normal(mean, covariance)
+        #samples_all = rng.multivariate_normal(mean, covariance, size=size)
+        #samples_all = rng.normal(mean, np.diag(covariance)**0.5, size=(size, len(mean)))
         if self.positive:
             mask = np.all(samples_all > 0, axis=1)
             samples = samples_all[mask, :]
         else:
             samples = samples_all
         # compute Poisson and Gaussian likelihood of these samples:
-        rv = multivariate_normal(mean, covariance)
         # proposal probability: Gaussian
-        loglike_proposal = rv.logpdf(samples) + profile_loglike
+        loglike_gauss_proposal = rv_logpdf(samples) - rv_logpdf(mean.reshape((1, -1)))
+        assert np.isfinite(loglike_gauss_proposal).all(), (samples[~np.isfinite(loglike_gauss_proposal),:], loglike_gauss_proposal[~np.isfinite(loglike_gauss_proposal)])
+        loglike_proposal = loglike_gauss_proposal + profile_loglike
+        # print('gauss-poisson importance sampling:', loglike_gauss_proposal, profile_loglike)
+        assert np.isfinite(loglike_proposal).all(), (samples, loglike_proposal, loglike_gauss_proposal)
         lam = samples @ X.T
+        # print('resampling:', lam.shape)
         # target probability function: Poisson
         loglike_target = np.sum(counts * log(lam) - lam, axis=1)
+        # print('full target:', loglike_target, loglike_target - profile_loglike)
         return samples, loglike_proposal, loglike_target
 
     def loglike_gauss_optimize(self, component_shapes):
@@ -308,6 +335,7 @@ class ComponentModel:
             list of sampled normalisations
         """
         gauss_reg = self.loglike_gauss_optimize(component_shapes)
+        loglike_profile = self.loglike_poisson(component_shapes)
         # get mean
         mean = gauss_reg.coef_
         # Compute covariance matrix
@@ -316,12 +344,24 @@ class ComponentModel:
         XTWX = X.T @ W @ X
         covariance = np.linalg.inv(XTWX)
         samples_all = rng.multivariate_normal(mean, covariance, size=size)
+
+        rv = multivariate_normal(mean, covariance)
+
         if self.positive:
             mask = np.all(samples_all > 0, axis=1)
             samples = samples_all[mask, :]
         else:
             samples = samples_all
-        return samples
+
+        y_pred = samples @ X.T
+        loglike_gauss_proposal = rv.logpdf(samples) - rv.logpdf(mean)
+        loglike_target = -0.5 * np.sum(
+            ((y_pred - self.flat_data) * self.flat_invvar) ** 2,
+            axis=1,
+        )
+        loglike_proposal = loglike_profile + loglike_gauss_proposal
+
+        return samples, loglike_proposal, loglike_target
 
 
 def test_gauss():

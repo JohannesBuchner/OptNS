@@ -75,6 +75,75 @@ class OptNS:
         self.compute_model_components = compute_model_components
         self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar)
 
+
+    def prior_predictive_check_plot(self, ax, size=20):
+        """Create prior predictive check visualisation.
+
+        Parameters
+        ----------
+        ax: object
+            Matplotlib axis object.
+        size: int
+            Maximum number of samples to return.
+        """
+        if self.statmodel.flat_invvar is None:
+            ax.plot(self.statmodel.flat_data, 'o ', ms=2, mfc='none', mec='k')
+        else:
+            ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
+        ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
+        colors = []
+        
+        for i in range(size):
+            u = np.random.uniform(size=len(self.nonlinear_param_names))
+            nonlinear_params = self.nonlinear_param_transform(u)
+            X = self.compute_model_components(nonlinear_params)
+            if self.statmodel.flat_invvar is None:
+                norms = self.statmodel.norms_poisson(X)
+            else:
+                norms = self.statmodel.norms_gauss(X)
+
+            for j, norm in enumerate(norms):
+                if i == 0:
+                    l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, label=self.linear_param_names[j])
+                    colors.append(l.get_color())
+                else:
+                    l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
+            
+            y_pred = norms @ X.T
+            ax.plot(y_pred, alpha=0.3, color='k', lw=1)
+
+
+    def posterior_predictive_check_plot(self, ax, samples, size=20):
+        """Create posterior predictive check visualisation.
+
+        Parameters
+        ----------
+        ax: object
+            Matplotlib axis object.
+        size: int
+            Maximum number of samples to return.
+        """
+        if self.statmodel.flat_invvar is None:
+            ax.plot(self.statmodel.flat_data, 'o ', ms=2, mfc='none', mec='k')
+        else:
+            ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
+        ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
+        colors = []
+        
+        for i, sample in enumerate(samples):
+            norms = sample[:len(self.linear_param_names)]
+            nonlinear_params = sample[len(self.linear_param_names):]
+            X = self.compute_model_components(nonlinear_params)
+            for j, norm in enumerate(norms):
+                if i == 0:
+                    l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, label=self.linear_param_names[j])
+                    colors.append(l.get_color())
+                else:
+                    l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
+            y_pred = norms @ X.T
+            ax.plot(y_pred, alpha=0.3, color='k', lw=1)
+
+
     def optlinearsample(self, nonlinear_params, size):
         """Sample linear parameters conditional on non-linear parameters.
 
@@ -99,16 +168,18 @@ class OptNS:
             linear_params, loglike_proposal, loglike_target = (
                 self.statmodel.sample_poisson(X, size)
             )
-            logl_profile = loglike_target - loglike_proposal
         else:
-            linear_params = self.statmodel.sample_gauss(X, size)
-            logl_profile = self.statmodel.loglike_gauss(X)
+            linear_params, loglike_proposal, loglike_target = (
+                self.statmodel.sample_gauss(X, size)
+            )
         Nsamples, Nlinear = linear_params.shape
         y_pred = linear_params @ X.T
-        if self.statmodel.flat_invvar is None:
-            logl_full = np.sum(self.statmodel.flat_data * log(y_pred) - y_pred, axis=1)
-        else:
-            logl_full = -0.5 * np.sum(
+        assert (y_pred > 0).any(axis=1).all()
+        assert (y_pred > 0).any(axis=0).all()
+        # print('sampler:', y_pred.shape)
+        if self.statmodel.flat_invvar is not None:
+            #logl_t = loglike_target # np.sum(self.statmodel.flat_data * log(y_pred) - y_pred, axis=1)
+            loglike_target = -0.5 * np.sum(
                 ((y_pred - self.statmodel.flat_data) * self.statmodel.flat_invvar) ** 2,
                 axis=1,
             )
@@ -116,7 +187,12 @@ class OptNS:
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
         params[:, :Nlinear] = linear_params
         params[:, Nlinear:] = nonlinear_params.reshape((1, -1))
-        return y_pred, params, logl_full + logprior - logl_profile - np.log(Nsamples)
+        assert np.isfinite(loglike_target).all(), loglike_target
+        assert np.isfinite(loglike_proposal).all(), loglike_proposal
+        #assert np.isfinite(logprior).all(), logprior
+        assert Nsamples > 0, Nsamples
+        # print('loglratios:', loglike_target - loglike_proposal, loglike_proposal)
+        return y_pred, params, loglike_target + logprior - loglike_proposal - np.log(Nsamples)
 
     def loglikelihood(self, nonlinear_params):
         """Compute optimized log-likelihood function.
@@ -159,11 +235,14 @@ class OptNS:
         )
         return self.sampler
 
-    def get_weighted_samples(self, oversample_factor):
+    def get_weighted_samples(self, samples, oversample_factor):
         """Sample from full posterior.
 
         Parameters
         ----------
+        samples: array
+            posterior samples of nonlinear parameters,
+            as returned by sampler.results["samples"]).
         oversample_factor: int
             Maximum number of conditional posterior samples on the
             linear parameters for each posterior sample
@@ -179,7 +258,7 @@ class OptNS:
         y_pred: array
             Predicted model for each sample. shape: (Nsamples, Ndata)
         """
-        optsamples = self.sampler.results["samples"]
+        optsamples = samples
         Noptsamples = len(optsamples)
         Nmaxsamples = Noptsamples * oversample_factor
         # go through posterior samples and sample normalisations
@@ -208,7 +287,7 @@ class OptNS:
         fullsamples = fullsamples[:Nsampled, :]
         logweights = logweights[:Nsampled]
 
-        weights = np.exp(logweights - logweights.max())
+        weights = np.exp(logweights - np.nanmax(logweights))
         weights /= weights.sum()
         return fullsamples, weights, y_preds
 
