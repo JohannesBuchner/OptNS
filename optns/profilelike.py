@@ -48,6 +48,7 @@ def test_poisson_negloglike_lowcount():
         poisson.logpmf(counts, np.ones(3) @ X.T).sum()
     )
 
+
 def test_poisson_negloglike_highcount():
     counts = np.array([10000, 10000])
     X = np.ones((2, 1))
@@ -55,7 +56,7 @@ def test_poisson_negloglike_highcount():
     assert np.isfinite(logl2), logl2
     logl3 = -poisson_negloglike(np.log([10000]), X, counts)
     assert np.isfinite(logl3), logl3
-    
+
     assert logl3 > logl2
 
 
@@ -215,27 +216,17 @@ class ComponentModel:
         # Compute the Fisher Information Matrix
         FIM = X.T @ D @ X
         covariance = np.linalg.inv(FIM)
-        # print(mean, np.diag(covariance)**0.5)
-        #covariance = np.diag(np.diag(covariance) * 0.01 + self.poisson_cov_diagonal)
-        #covariance += np.diag(0 * mean + self.poisson_cov_diagonal)
-        # print('mean:', mean)
-        # print('stdev:', np.diag(covariance)**0.5)
-        # print('cov:', covariance)
         try:
             rv = multivariate_normal(mean, covariance)
             samples_all = rv.rvs(size=size, random_state=rng).reshape((size, len(mean)))
             rv_logpdf = rv.logpdf
         except np.linalg.LinAlgError:
             stdev = np.diag(covariance)**0.5
-            #covariance = np.diag(np.diag(covariance) + 1e-20)
             rv = norm(mean, stdev)
             samples_all = rng.normal(mean, stdev, size=(size, len(mean))).reshape((size, len(mean)))
-            rv_logpdf = lambda x: rv.logpdf(x).sum(axis=1)
-            # print('using mean field with stdev:', stdev)
-            #return np.empty((0, len(mean))), np.empty((0,)), np.empty((0,))
-        #rv = multivariate_normal(mean, covariance)
-        #samples_all = rng.multivariate_normal(mean, covariance, size=size)
-        #samples_all = rng.normal(mean, np.diag(covariance)**0.5, size=(size, len(mean)))
+
+            def rv_logpdf(x):
+                return rv.logpdf(x).sum(axis=1)
         if self.positive:
             mask = np.all(samples_all > 0, axis=1)
             samples = samples_all[mask, :]
@@ -244,7 +235,8 @@ class ComponentModel:
         # compute Poisson and Gaussian likelihood of these samples:
         # proposal probability: Gaussian
         loglike_gauss_proposal = rv_logpdf(samples) - rv_logpdf(mean.reshape((1, -1)))
-        assert np.isfinite(loglike_gauss_proposal).all(), (samples[~np.isfinite(loglike_gauss_proposal),:], loglike_gauss_proposal[~np.isfinite(loglike_gauss_proposal)])
+        assert np.isfinite(loglike_gauss_proposal).all(), (
+            samples[~np.isfinite(loglike_gauss_proposal),:], loglike_gauss_proposal[~np.isfinite(loglike_gauss_proposal)])
         loglike_proposal = loglike_gauss_proposal + profile_loglike
         # print('gauss-poisson importance sampling:', loglike_gauss_proposal, profile_loglike)
         assert np.isfinite(loglike_proposal).all(), (samples, loglike_proposal, loglike_gauss_proposal)
@@ -390,7 +382,7 @@ def test_gauss():
     np.testing.assert_allclose(logl, loglike_manual)
     samples = statmodel.sample_gauss(X, 10000, rng)
     assert np.all(samples > 0)
-    # plot 
+    # plot
     import matplotlib.pyplot as plt
     plt.figure(figsize=(15, 6))
     plt.plot(x, model)
@@ -417,7 +409,7 @@ def test_poisson_verylowcount():
         assert samples.shape == (Nsamples, 1), samples.shape
         assert loglike_proposal.shape == (Nsamples,)
         assert loglike_target.shape == (Nsamples,)
-        # plot 
+        # plot
         import matplotlib.pyplot as plt
         bins = np.linspace(0, samples.max(), 200)
         plt.figure()
@@ -442,6 +434,7 @@ def test_poisson_lowcount():
     data = rng.poisson(model)
 
     X = np.transpose([A, B, C])
+
     def minfunc(lognorms):
         lam = np.exp(lognorms) @ X.T
         loglike = data * np.log(lam) - lam
@@ -465,25 +458,24 @@ def test_poisson_lowcount():
     assert samples.shape == (Nsamples, 3), samples.shape
     assert loglike_proposal.shape == (Nsamples,)
     assert loglike_target.shape == (Nsamples,)
-    # plot 
+    # plot
     import matplotlib.pyplot as plt
     plt.figure(figsize=(15, 6))
     plt.plot(x, model)
     plt.scatter(x, data)
     for sample in samples[::4000]:
         plt.plot(x, X @ sample, ls='-', lw=1, alpha=0.5, color='k')
-        #np.testing.assert_allclose(sample, reg.coef_, atol=0.1, rtol=0.2)
-    
+        # np.testing.assert_allclose(sample, reg.coef_, atol=0.1, rtol=0.2)
+
     weight = exp(loglike_target - loglike_proposal - np.max(loglike_target - loglike_proposal))
     print(weight, weight.min(), weight.max(), weight.mean())
     weight /= weight.sum()
     rejection_sampled_indices = rng.choice(len(samples), p=weight, size=40)
     for sample in samples[rejection_sampled_indices,:]:
         plt.plot(x, X @ sample, ls='-', lw=1, alpha=0.5, color='r')
-    
+
     plt.savefig('testpoissonsampling.pdf')
     plt.close()
-
 
 
 def test_poisson_highcount():
@@ -497,6 +489,7 @@ def test_poisson_highcount():
     data = rng.poisson(model)
 
     X = np.transpose([A, B, C])
+
     def minfunc(lognorms):
         lam = np.exp(lognorms) @ X.T
         loglike = data * np.log(lam) - lam
@@ -520,25 +513,21 @@ def test_poisson_highcount():
     assert samples.shape == (Nsamples, 3), samples.shape
     assert loglike_proposal.shape == (Nsamples,)
     assert loglike_target.shape == (Nsamples,)
-    # plot 
+    # plot
     import matplotlib.pyplot as plt
     plt.figure(figsize=(15, 6))
     plt.plot(x, model)
     plt.scatter(x, data)
     for sample in samples[::4000]:
         plt.plot(x, X @ sample, ls='-', lw=1, alpha=0.5, color='k')
-        #np.testing.assert_allclose(sample, reg.coef_, atol=0.1, rtol=0.2)
-    
+        # np.testing.assert_allclose(sample, reg.coef_, atol=0.1, rtol=0.2)
+
     weight = exp(loglike_target - loglike_proposal - np.max(loglike_target - loglike_proposal))
     print(weight, weight.min(), weight.max(), weight.mean())
     weight /= weight.sum()
     rejection_sampled_indices = rng.choice(len(samples), p=weight, size=40)
     for sample in samples[rejection_sampled_indices,:]:
         plt.plot(x, X @ sample, ls='-', lw=1, alpha=0.5, color='r')
-    
+
     plt.savefig('testpoissonsampling2.pdf')
     plt.close()
-
-
-
-

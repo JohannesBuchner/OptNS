@@ -74,7 +74,6 @@ class OptNS:
         self.compute_model_components = compute_model_components
         self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar)
 
-
     def prior_predictive_check_plot(self, ax, size=20):
         """Create prior predictive check visualisation.
 
@@ -91,7 +90,7 @@ class OptNS:
             ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
         ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
         colors = []
-        
+
         for i in range(size):
             u = np.random.uniform(size=len(self.nonlinear_param_names))
             nonlinear_params = self.nonlinear_param_transform(u)
@@ -107,20 +106,19 @@ class OptNS:
                     colors.append(l.get_color())
                 else:
                     l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
-            
+
             y_pred = norms @ X.T
             ax.plot(y_pred, alpha=0.3, color='k', lw=1)
 
-
-    def posterior_predictive_check_plot(self, ax, samples, size=20):
+    def posterior_predictive_check_plot(self, ax, samples):
         """Create posterior predictive check visualisation.
 
         Parameters
         ----------
         ax: object
             Matplotlib axis object.
-        size: int
-            Maximum number of samples to return.
+        samples: array
+            Posterior samples.
         """
         if self.statmodel.flat_invvar is None:
             ax.plot(self.statmodel.flat_data, 'o ', ms=2, mfc='none', mec='k')
@@ -128,7 +126,7 @@ class OptNS:
             ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
         ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
         colors = []
-        
+
         for i, sample in enumerate(samples):
             norms = sample[:len(self.linear_param_names)]
             nonlinear_params = sample[len(self.linear_param_names):]
@@ -141,7 +139,6 @@ class OptNS:
                     l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
             y_pred = norms @ X.T
             ax.plot(y_pred, alpha=0.3, color='k', lw=1)
-
 
     def optlinearsample(self, nonlinear_params, size):
         """Sample linear parameters conditional on non-linear parameters.
@@ -181,7 +178,7 @@ class OptNS:
         params[:, Nlinear:] = nonlinear_params.reshape((1, -1))
         assert np.isfinite(loglike_target).all(), loglike_target
         assert np.isfinite(loglike_proposal).all(), loglike_proposal
-        #assert np.isfinite(logprior).all(), logprior
+        # assert np.isfinite(logprior).all(), logprior
         assert Nsamples > 0, Nsamples
         # print('loglratios:', loglike_target - loglike_proposal, loglike_proposal)
         return y_pred, params, loglike_target + logprior - loglike_proposal - np.log(Nsamples)
@@ -263,7 +260,7 @@ class OptNS:
                 len(self.linear_param_names) + len(self.nonlinear_param_names),
             )
         )
-        for i, nonlinear_params in enumerate(tqdm.tqdm(optsamples)):
+        for nonlinear_params in tqdm.tqdm(optsamples):
             y_pred_i, fullsamples_i, logweights_i = self.optlinearsample(
                 nonlinear_params, size=oversample_factor
             )
