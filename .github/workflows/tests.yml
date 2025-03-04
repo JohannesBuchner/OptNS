@@ -6,10 +6,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    #strategy:
-    #  fail-fast: false
-    #  matrix:
-    #    python-version: [3.12]
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.12]
 
     steps:
     - uses: actions/checkout@v2
@@ -21,6 +21,9 @@ jobs:
 
     - name: Install the latest version of uv
       uses: astral-sh/setup-uv@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
 
     - name: Install dependencies
       run: uv pip install numpy scipy matplotlib scikit-learn h5py cython flake8 pycodestyle pydocstyle pytest-html pytest-xdist coverage coverage-lcov
