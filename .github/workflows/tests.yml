@@ -38,20 +38,20 @@ jobs:
     - name: Check doc style
       run: pydocstyle optns
 
-    - name: Install package
-      run: uv pip install .
-
     - name: Test with pytest
-      run: coverage3 run -p -m pytest
+      run: PYTHONPATH=. coverage3 run -p -m pytest
 
     - name: Run Poisson example
-      run: coverage3 run -p examples/poissonoptns.py
+      run: PYTHONPATH=. coverage3 run -p examples/poissonoptns.py
 
     #- name: Run Gauss basic example
     #  run: coverage3 run -p examples/gaussprofilefit.py
 
     - name: Run Gauss example
-      run: coverage3 run -p examples/gaussoptns.py
+      run: PYTHONPATH=. coverage3 run -p examples/gaussoptns.py
+
+    - name: Install package
+      run: uv pip install .
 
     - name: Coverage report
       run: |
