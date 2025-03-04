@@ -72,7 +72,7 @@ optsampler.plot()
 
 # now for postprocessing the results, we want to get the full posterior:
 # this samples up to 1000 normalisations for each nonlinear posterior sample:
-fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 1000)
+fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'][:400], 1000)
 print(f'Obtained {len(fullsamples)} weighted posterior samples')
 
 # to obtain equally weighted samples, we resample
