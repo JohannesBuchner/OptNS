@@ -38,7 +38,7 @@ jobs:
       run: pydocstyle optns
 
     - name: Install package
-      run: uv pip install -e .
+      run: uv pip install .
 
     - name: Test with pytest
       run: coverage3 run -p -m pytest
