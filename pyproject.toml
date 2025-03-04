@@ -1,3 +1,8 @@
+[build-system]
+# Minimum requirements for the build system to execute.
+requires = ["setuptools", "wheel"]  # PEP 508 specifications.
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "optns"
 version = "0.1.0"
@@ -5,3 +10,8 @@ description = "Optimized Nested Sampling: fast inference for non-linear additive
 readme = "README.rst"
 requires-python = ">=3.8"
 dependencies = ["numpy", "scipy", "scikit-learn", "tqdm", "ultranest", "corner", "matplotlib"]
+license = {file = "LICENSE"}
+authors = [
+    { name = "Johannes Buchner", email = "johannes.buchner.acad@gmx.com" },
+]
+keywords = ["Bayesian statistics", "inference", "scientific software", "parametric models", "generalized additive models"]

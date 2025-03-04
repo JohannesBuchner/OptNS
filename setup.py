@@ -22,21 +22,10 @@ setup_requirements = ['pytest-runner', ]
 test_requirements = ['pytest>=3', ]
 
 setup(
-    author="Johannes Buchner",
-    author_email='johannes.buchner.acad@gmx.com',
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*, !=3.7.*, !=3.8.*',
-    classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Intended Audience :: Science/Research',
-        'Intended Audience :: Developers',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
-        'Natural Language :: English',
-    ],
     description="Optimized Nested Sampling",
     install_requires=requirements,
-    license="GNU General Public License v3",
     long_description=readme + '\n\n' + history,
-    keywords='optns',
     name='optns',
     packages=['optns'],
     setup_requires=setup_requirements,
