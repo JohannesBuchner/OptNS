@@ -1,3 +1,4 @@
+"""Nested sampling and importance resampling functionality."""
 import numpy as np
 import tqdm
 from ultranest import ReactiveNestedSampler
