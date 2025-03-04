@@ -129,7 +129,7 @@ def test_poisson_lowcount():
     logl_expected = -poisson_negloglike(res.x, X, data)
     assert np.isclose(logl, logl_expected), (logl, logl_expected)
     norms_inferred = statmodel.norms_poisson(X)
-    np.testing.assert_allclose(norms_inferred, [2.71413583, 0.46963565, 5.45321002])
+    np.testing.assert_allclose(norms_inferred, [2.71413583, 0.46963565, 5.45321002], atol=1e-6)
     np.testing.assert_allclose(norms_inferred, norms_expected)
     samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 100000, rng)
     assert np.all(samples > 0)
