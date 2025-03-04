@@ -35,3 +35,12 @@ jobs:
 
     - name: Test with pytest
       run: pytest
+
+    - name: Run Gauss basic example
+      run: python examples/gaussprofilefit.py
+
+    - name: Run Gauss example
+      run: python examples/gaussoptns.py
+
+    - name: Run Poisson example
+      run: python examples/poissonoptns.py
