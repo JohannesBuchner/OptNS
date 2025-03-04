@@ -26,7 +26,7 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv pip install numpy scipy matplotlib scikit-learn h5py cython flake8 pycodestyle pydocstyle pytest-html pytest-xdist coverage coverage-lcov
+      run: uv pip install numpy scipy matplotlib scikit-learn h5py flake8 pycodestyle pydocstyle pytest-html pytest-xdist coverage coverage-lcov
 
     - name: Lint with flake8
       run: flake8 optns
