@@ -55,6 +55,7 @@ jobs:
 
     - name: Coverage report
       run: |
+        coverage3 combine
         coverage3 report
         coverage-lcov
         # make paths relative
