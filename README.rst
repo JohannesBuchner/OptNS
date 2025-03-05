@@ -4,6 +4,20 @@ Optimized Nested Sampling
 
 Faster inference by parameter space reduction of linear parameters.
 
+
+.. image:: https://img.shields.io/pypi/v/optns.svg
+        :target: https://pypi.python.org/pypi/optns
+
+.. image:: https://github.com/JohannesBuchner/OptNS/actions/workflows/tests.yml/badge.svg
+        :target: https://github.com/JohannesBuchner/OptNS/actions/workflows/tests.yml
+
+.. image:: https://coveralls.io/repos/github/JohannesBuchner/OptNS/badge.svg?branch=main
+	:target: https://coveralls.io/github/JohannesBuchner/OptNS?branch=main
+
+.. image:: https://img.shields.io/badge/GitHub-JohannesBuchner%2FOptNS-blue.svg?style=flat
+        :target: https://github.com/JohannesBuchner/OptNS/
+        :alt: Github repository
+
 Context
 -------
 
