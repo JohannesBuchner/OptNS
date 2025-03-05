@@ -62,6 +62,13 @@ statmodel = OptNS(
     linear_param_names, nonlinear_param_names, compute_model_components,
         nonlinear_param_transform, linear_param_logprior,
         data, positive=True)
+
+ax = plt.figure(figsize=(15, 6)).gca()
+statmodel.prior_predictive_check_plot(ax)
+plt.legend()
+plt.savefig(f'poissonprofilefit{Ndata}-ppc.pdf')
+plt.close()
+
 # create a UltraNest sampler from this. You can pass additional arguments like here:
 optsampler = statmodel.ReactiveNestedSampler(
     log_dir=f'poissonprofilefit{Ndata}-opt', resume=True)
@@ -88,6 +95,13 @@ plt.scatter(x, data)
 for y_pred in y_pred_samples[:40]:
     plt.plot(x, y_pred, ls='-', lw=1, alpha=0.1, color='k')
 plt.savefig(f'poissonprofilefit{Ndata}-opt.pdf')
+plt.close()
+
+# or with a convenience function:
+ax = plt.figure(figsize=(15, 6)).gca()
+statmodel.posterior_predictive_check_plot(ax, samples[:100])
+plt.legend()
+plt.savefig(f'poissonprofilefit{Ndata}-postpc.pdf')
 plt.close()
 
 # make a corner plot:

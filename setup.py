@@ -12,7 +12,7 @@ with open('README.rst', encoding="utf-8") as readme_file:
     readme = readme_file.read()
 
 with open('HISTORY.rst', encoding="utf-8") as history_file:
-    history = re.sub(r':py:class:`([^`]+)`', r'\1', 
+    history = re.sub(r':py:class:`([^`]+)`', r'\1',
         history_file.read())
 
 requirements = ['numpy', 'scipy', 'matplotlib', 'scikit-learn', 'tqdm', 'ultranest']
@@ -23,7 +23,6 @@ test_requirements = ['pytest>=3', ]
 
 setup(
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*, !=3.7.*, !=3.8.*',
-    description="Optimized Nested Sampling",
     install_requires=requirements,
     long_description=readme + '\n\n' + history,
     name='optns',
