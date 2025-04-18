@@ -28,6 +28,57 @@ def poisson_negloglike(lognorms, X, counts):
     return -loglike.sum()
 
 
+def poisson_negloglike_grad(lognorms, X, counts):
+    """Compute gradient of negative log-likelihood of a Poisson distribution.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+
+    Returns
+    -------
+    grad: array
+        vector of gradients
+    """
+    norms = np.exp(lognorms)
+    lam = norms @ X.T
+    diff = 1 - counts / lam
+    grad = (diff @ X) * norms
+    return grad
+
+def poisson_initial_guess(X, counts, epsilon=0.1):
+    """Initial guess for the Poisson normalizations.
+
+    Based on weighted least squares, with zero counts adjusted.
+
+    Parameters
+    ----------
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    epsilon: float
+        small number to add to counts to avoid zeros.
+
+    Returns
+    -------
+    lognorms: array
+        logarithm of normalisations
+    """
+    y = Y + epsilon
+    W = np.diag(1.0 / y)
+    A = B
+    # Weighted least squares: N = (A^T W A)^(-1) A^T W y
+    AtW = A.T @ W
+    N0 = np.linalg.solve(AtW @ A, AtW @ y)
+    return np.log(N0)
+
+
 class ComponentModel:
     """Generalized Additive Model.
 
@@ -93,17 +144,12 @@ class ComponentModel:
             assert np.all(X >= 0), X
         y = self.flat_data
         assert np.isfinite(y).all(), y
-        offy = self.poisson_guess_data_offset
         offX = self.poisson_guess_model_offset
-        x0 = np.log(
-            np.median(
-                (y.reshape((-1, 1)) + offy) / (X + offX),
-                axis=0,
-            )
-        )
+        x0 = poisson_initial_guess(X, y, epsilon=self.poisson_guess_data_offset)
         assert np.isfinite(x0).all(), (x0, y, offy, X, offX)
         res = minimize(
             poisson_negloglike, x0, args=(X, y),
+            jac=poisson_negloglike_grad,
             **self.minimize_kwargs)
         return res
 
