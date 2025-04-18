@@ -268,3 +268,41 @@ def test_poisson_component_zero():
     except AssertionError:
         pass
 
+
+def test_poisson_components_identical():
+    Ndata = 40
+    x = np.linspace(0, 10, Ndata)
+    A = 0 * x + 1
+    B = x
+    C = B
+    model = 3 * A + 0.5 * B + 5 * C
+    X = np.transpose([A, B, C])
+    rng = np.random.RandomState(Ndata)
+    data = rng.poisson(model)
+    assert data.sum() > 0
+    statmodel = ComponentModel(3, data)
+    try:
+        statmodel.norms_poisson(X)
+        raise Exception()
+    except np.linalg.LinAlgError:
+        pass
+
+
+def test_gauss_components_identical():
+    x = np.linspace(0, 10, 400)
+    A = 0 * x + 1
+    B = x
+    C = B
+    model = 3 * A + 0.5 * B + 5 * C
+    noise = 0.5 + 0.1 * x
+
+    rng = np.random.RandomState(42)
+    data = rng.normal(model, noise)
+
+    X = np.transpose([A, B, C])
+    y = data
+    sample_weight = noise**-2
+    statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
+    assert statmodel.norms_gauss(X)[2] == 0
+
+

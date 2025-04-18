@@ -147,7 +147,7 @@ class ComponentModel:
         if not np.any(X > 0, axis=0).all():
             raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
         if self.positive and not np.all(X >= 0):
-            raise AssertionError(f"Components must not be negative.")
+            raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         y = self.flat_data
         x0 = poisson_initial_guess(X, y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
         assert np.isfinite(x0).all(), (x0, y, X)
