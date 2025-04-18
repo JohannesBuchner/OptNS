@@ -136,6 +136,33 @@ def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
     return np.log(np.clip(N0, 0, None) + minnorm)
 
 
+def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
+    """Guess component normalizations from counts.
+
+    Based on the median count to model ratio of the components.
+
+    Parameters
+    ----------
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    epsilon_model: float
+        small number to add to model components to avoid division by zero.
+    epsilon_data: float
+        small number to add to counts to avoid zeros.
+
+    Returns
+    -------
+    lognorms: array
+        logarithm of normalisations
+    """
+    counts_pos = counts.reshape((-1, 1)) + epsilon_data
+    components_pos = X + epsilon_model
+    N0 = np.median(counts_pos / components_pos, axis=0)
+    return np.log(N0)
+
+
 class ComponentModel:
     """Generalized Additive Model.
 
@@ -171,7 +198,7 @@ class ComponentModel:
             self.invvar_matrix = np.diag(self.flat_invvar)
         self.Ncomponents = Ncomponents
         self.poisson_guess_data_offset = 0.1
-        self.poisson_guess_model_offset = 1e-50
+        self.poisson_guess_model_offset = 0.1
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
         self.cond_threshold = 1e6
         self.poisson_cov_diagonal = 1e-10
@@ -205,7 +232,10 @@ class ComponentModel:
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         y = self.flat_data
         mask_unique = unique_components(X)
-        x0 = poisson_initial_guess(X[:,mask_unique], y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
+        x0 = poisson_initial_guess_heuristic(
+            X[:,mask_unique], y,
+            self.poisson_guess_model_offset,self.poisson_guess_data_offset)
+        # x0_rigorous = poisson_initial_guess(X[:,mask_unique], y, 0.1, 1e-50)
         assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
             poisson_negloglike, x0, args=(X[:,mask_unique], y),
