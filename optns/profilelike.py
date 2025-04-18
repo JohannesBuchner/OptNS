@@ -70,12 +70,11 @@ def poisson_initial_guess(X, counts, epsilon=0.1):
     lognorms: array
         logarithm of normalisations
     """
-    y = Y + epsilon
+    y = counts + epsilon
     W = np.diag(1.0 / y)
-    A = B
-    # Weighted least squares: N = (A^T W A)^(-1) A^T W y
-    AtW = A.T @ W
-    N0 = np.linalg.solve(AtW @ A, AtW @ y)
+    # Weighted least squares: N = (X^T W X)^(-1) X^T W y
+    XtW = X.T @ W
+    N0 = np.linalg.solve(XtW @ X, XtW @ y)
     return np.log(N0)
 
 
@@ -144,9 +143,8 @@ class ComponentModel:
             assert np.all(X >= 0), X
         y = self.flat_data
         assert np.isfinite(y).all(), y
-        offX = self.poisson_guess_model_offset
         x0 = poisson_initial_guess(X, y, epsilon=self.poisson_guess_data_offset)
-        assert np.isfinite(x0).all(), (x0, y, offy, X, offX)
+        assert np.isfinite(x0).all(), (x0, y, X)
         res = minimize(
             poisson_negloglike, x0, args=(X, y),
             jac=poisson_negloglike_grad,
