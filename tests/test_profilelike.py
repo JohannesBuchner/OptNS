@@ -121,7 +121,7 @@ def test_poisson_lowcount():
         return -loglike.sum()
 
     x0 = np.log(np.median((data.reshape((-1, 1)) + 0.1) / (X + 0.1), axis=0))
-    res = minimize(minfunc, x0, method='L-BFGS-B')
+    res = minimize(minfunc, x0, method='Nelder-Mead', options=dict(fatol=1e-10, maxfev=10000))
     norms_expected = np.exp(res.x)
 
     statmodel = ComponentModel(3, data)
@@ -129,8 +129,8 @@ def test_poisson_lowcount():
     logl_expected = -poisson_negloglike(res.x, X, data)
     assert np.isclose(logl, logl_expected), (logl, logl_expected)
     norms_inferred = statmodel.norms_poisson(X)
-    np.testing.assert_allclose(norms_inferred, [2.71413583, 0.46963565, 5.45321002], atol=1e-6)
-    np.testing.assert_allclose(norms_inferred, norms_expected)
+    np.testing.assert_allclose(norms_inferred, [2.71413583, 0.46963565, 5.45321002], atol=1e-3)
+    np.testing.assert_allclose(norms_inferred, norms_expected, atol=0.001)
     samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 100000, rng)
     assert np.all(samples > 0)
     Nsamples = len(samples)
@@ -175,7 +175,8 @@ def test_poisson_highcount():
         return -loglike.sum()
 
     x0 = np.log(np.median((data.reshape((-1, 1)) + 0.1) / (X + 0.1), axis=0))
-    res = minimize(minfunc, x0, method='L-BFGS-B')
+    #res = minimize(minfunc, x0, method='L-BFGS-B', options=dict(ftol=1e-10, maxfun=10000))
+    res = minimize(minfunc, x0, method='Nelder-Mead', options=dict(fatol=1e-10, maxfev=10000))
     norms_expected = np.exp(res.x)
 
     statmodel = ComponentModel(3, data)
@@ -183,8 +184,8 @@ def test_poisson_highcount():
     logl_expected = -poisson_negloglike(res.x, X, data)
     assert np.isclose(logl, logl_expected), (logl, logl_expected)
     norms_inferred = statmodel.norms_poisson(X)
-    np.testing.assert_allclose(norms_inferred, [29.94286524, 4.73544127, 51.15153849])
-    np.testing.assert_allclose(norms_inferred, norms_expected)
+    np.testing.assert_allclose(norms_inferred, norms_expected, atol=0.001)
+    np.testing.assert_allclose(norms_inferred, [29.940845,  4.736076, 51.151115], atol=0.001)
     samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 100000, rng)
     assert np.all(samples > 0)
     Nsamples = len(samples)

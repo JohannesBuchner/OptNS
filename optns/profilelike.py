@@ -112,7 +112,7 @@ class ComponentModel:
         self.Ncomponents = Ncomponents
         self.poisson_guess_data_offset = 0.1
         self.poisson_guess_model_offset = 0.1
-        self.minimize_kwargs = dict(method="L-BFGS-B")
+        self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
         self.cond_threshold = 1e6
         self.poisson_cov_diagonal = 1e-10
         self.positive = positive
