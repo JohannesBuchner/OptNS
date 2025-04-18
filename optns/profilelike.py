@@ -53,7 +53,7 @@ def poisson_negloglike_grad(lognorms, X, counts):
 
 
 def poisson_initial_guess(X, counts, epsilon=0.1):
-    """Initial guess for the Poisson normalizations.
+    """Guess component normalizations from counts.
 
     Based on weighted least squares, with zero counts adjusted.
 
