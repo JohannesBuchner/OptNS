@@ -80,6 +80,30 @@ def poisson_negloglike_grad(lognorms, X, counts):
     return grad
 
 
+def poisson_laplace_approximation(lognorms, X):
+    """Compute mean and covariance corresponding to Poisson likelihood.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+
+    Returns
+    -------
+    grad: array
+        vector of gradients
+    """
+    mean = exp(lognorms)
+    lambda_hat = mean @ X.T
+    D = np.diag(1 / lambda_hat)
+    # Compute the Fisher Information Matrix
+    FIM = X.T @ D @ X
+    covariance = np.linalg.inv(FIM)
+    return mean, covariance
+
+
 def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
     """Guess component normalizations from counts.
 
@@ -214,6 +238,8 @@ class ComponentModel:
     def norms_poisson(self, component_shapes):
         """Return optimal normalisations.
 
+        Normalisations of subsequent identical components will be zero.
+
         Parameters
         ----------
         component_shapes: array
@@ -262,13 +288,7 @@ class ComponentModel:
         assert np.isfinite(profile_loglike), res
         # get mean
         counts = self.flat_data
-        lognorms = res.x
-        mean = exp(lognorms)
-        lambda_hat = mean @ X.T
-        D = np.diag(1 / lambda_hat)
-        # Compute the Fisher Information Matrix
-        FIM = X.T @ D @ X
-        covariance = np.linalg.inv(FIM)
+        mean, covariance = poisson_laplace_approximation(res.x, X)
         try:
             rv = multivariate_normal(mean, covariance)
             samples_all = rv.rvs(size=size, random_state=rng).reshape((size, len(mean)))
@@ -348,6 +368,8 @@ class ComponentModel:
 
     def norms_gauss(self, component_shapes):
         """Return optimal normalisations.
+
+        Normalisations of subsequent identical components will be zero.
 
         Parameters
         ----------
