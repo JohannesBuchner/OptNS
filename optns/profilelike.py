@@ -52,7 +52,7 @@ def poisson_negloglike_grad(lognorms, X, counts):
     return grad
 
 
-def poisson_initial_guess(X, counts, epsilon=0.1):
+def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
     """Guess component normalizations from counts.
 
     Based on weighted least squares, with zero counts adjusted.
@@ -65,6 +65,8 @@ def poisson_initial_guess(X, counts, epsilon=0.1):
         non-negative integers giving the observed counts.
     epsilon: float
         small number to add to counts to avoid zeros.
+    minnorm: float
+        smallest allowed normalisation
 
     Returns
     -------
@@ -76,7 +78,7 @@ def poisson_initial_guess(X, counts, epsilon=0.1):
     # Weighted least squares: N = (X^T W X)^(-1) X^T W y
     XtW = X.T @ W
     N0 = np.linalg.solve(XtW @ X, XtW @ y)
-    return np.log(N0)
+    return np.log(N0 + minnorm)
 
 
 class ComponentModel:
@@ -112,7 +114,7 @@ class ComponentModel:
             self.invvar_matrix = np.diag(self.flat_invvar)
         self.Ncomponents = Ncomponents
         self.poisson_guess_data_offset = 0.1
-        self.poisson_guess_model_offset = 0.1
+        self.poisson_guess_model_offset = 1e-50
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
         self.cond_threshold = 1e6
         self.poisson_cov_diagonal = 1e-10
@@ -144,7 +146,7 @@ class ComponentModel:
             assert np.all(X >= 0), X
         y = self.flat_data
         assert np.isfinite(y).all(), y
-        x0 = poisson_initial_guess(X, y, epsilon=self.poisson_guess_data_offset)
+        x0 = poisson_initial_guess(X, y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
         assert np.isfinite(x0).all(), (x0, y, X)
         res = minimize(
             poisson_negloglike, x0, args=(X, y),
