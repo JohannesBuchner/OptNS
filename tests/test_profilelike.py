@@ -212,4 +212,59 @@ def test_poisson_highcount():
 
 
 
+def test_poisson_loglike():
+    Ns = [10, 40, 100, 400, 1000, 4000, 10000]
+    SNRs = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+
+    for Ndata in Ns:
+        x = np.linspace(0, 10, Ndata)
+        A = 0 * x + 1
+        B = x
+        C = np.sin(x + 2)**2
+        for SNR in SNRs:
+            model = (3 * A + 0.5 * B + 5 * C) * SNR
+            X = np.transpose([A, B, C])
+            rng = np.random.RandomState(Ndata)
+            data = rng.poisson(model)
+            if data.sum() == 0: continue
+            statmodel = ComponentModel(3, data)
+            norms_inferred = statmodel.norms_poisson(X)
+            assert np.isfinite(norms_inferred).all(), norms_inferred
+            logl = statmodel.loglike_poisson(X)
+            assert np.isfinite(logl), logl
+
+def test_poisson_component_somezero():
+    Ndata = 40
+    x = np.linspace(0, 10, Ndata)
+    A = 0 * x + 1
+    B = np.where(x > 8, x, 0)
+    C = np.sin(x + 2)**2
+    model = 3 * A + 0.5 * B + 5 * C
+    X = np.transpose([A, B, C])
+    rng = np.random.RandomState(Ndata)
+    data = rng.poisson(model)
+    assert data.sum() > 0
+    statmodel = ComponentModel(3, data)
+    norms_inferred = statmodel.norms_poisson(X)
+    assert np.isfinite(norms_inferred).all(), norms_inferred
+    logl = statmodel.loglike_poisson(X)
+    assert np.isfinite(logl), logl
+
+def test_poisson_component_zero():
+    Ndata = 40
+    x = np.linspace(0, 10, Ndata)
+    A = 0 * x + 1
+    B = x * 0
+    C = np.sin(x + 2)**2
+    model = 3 * A + 0.5 * B + 5 * C
+    X = np.transpose([A, B, C])
+    rng = np.random.RandomState(Ndata)
+    data = rng.poisson(model)
+    assert data.sum() > 0
+    statmodel = ComponentModel(3, data)
+    try:
+        statmodel.norms_poisson(X)
+        raise Exception()
+    except AssertionError:
+        pass
 

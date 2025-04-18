@@ -109,6 +109,8 @@ class ComponentModel:
         """
         (self.Ndata,) = flat_data.shape
         self.flat_data = flat_data
+        if not np.isfinite(self.flat_data).all():
+            raise AssertionError("Invalid data, not finite numbers.")
         self.flat_invvar = flat_invvar
         if self.flat_invvar is not None:
             self.invvar_matrix = np.diag(self.flat_invvar)
@@ -140,12 +142,13 @@ class ComponentModel:
         )
         X = component_shapes
         assert np.isfinite(X).all()
-        assert np.any(X > 0, axis=0).all()
-        assert np.any(X > 0, axis=1).all()
-        if self.positive:
-            assert np.all(X >= 0), X
+        if not np.any(X > 0, axis=1).all():
+            raise AssertionError("In portions of the data set, all component shapes are zero. Problem is ill-defined.")
+        if not np.any(X > 0, axis=0).all():
+            raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
+        if self.positive and not np.all(X >= 0):
+            raise AssertionError(f"Components must not be negative.")
         y = self.flat_data
-        assert np.isfinite(y).all(), y
         x0 = poisson_initial_guess(X, y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
         assert np.isfinite(x0).all(), (x0, y, X)
         res = minimize(
