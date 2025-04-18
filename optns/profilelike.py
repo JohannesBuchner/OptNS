@@ -78,7 +78,7 @@ def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
     # Weighted least squares: N = (X^T W X)^(-1) X^T W y
     XtW = X.T @ W
     N0 = np.linalg.solve(XtW @ X, XtW @ y)
-    return np.log(N0 + minnorm)
+    return np.log(np.clip(N0, 0, None) + minnorm)
 
 
 class ComponentModel:
