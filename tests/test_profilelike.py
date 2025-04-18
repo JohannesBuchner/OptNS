@@ -281,11 +281,9 @@ def test_poisson_components_identical():
     data = rng.poisson(model)
     assert data.sum() > 0
     statmodel = ComponentModel(3, data)
-    try:
-        statmodel.norms_poisson(X)
-        raise Exception()
-    except np.linalg.LinAlgError:
-        pass
+    assert statmodel.norms_poisson(X)[2] == 0
+    logl = statmodel.loglike_poisson(X)
+    assert np.isfinite(logl), logl
 
 
 def test_gauss_components_identical():
@@ -304,5 +302,4 @@ def test_gauss_components_identical():
     sample_weight = noise**-2
     statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
     assert statmodel.norms_gauss(X)[2] == 0
-
 

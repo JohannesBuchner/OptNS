@@ -6,6 +6,34 @@ from scipy.stats import multivariate_normal, norm
 from sklearn.linear_model import LinearRegression
 
 
+def unique_components(X, tol=1e-12):
+    """Identify components.
+
+    Returns a boolean mask where each entry is True if the corresponding column
+    in X is different from all previous columns.
+
+    Parameters
+    ----------
+    X: array
+        transposed list of the model component vectors.
+    tol: float
+        tolerance for comparing components
+
+    Returns
+    -------
+    mask: array
+        boolean mask of shape X.shape[1]
+    """
+    n_cols = X.shape[1]
+    mask = np.ones(n_cols, dtype=bool)
+    for i in range(1, n_cols):
+        for j in range(i):
+            if mask[j] and np.allclose(X[:, i], X[:, j], atol=tol, rtol=0):
+                mask[i] = False
+                break
+    return mask
+
+
 def poisson_negloglike(lognorms, X, counts):
     """Compute negative log-likelihood of a Poisson distribution.
 
@@ -77,7 +105,10 @@ def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
     W = np.diag(1.0 / y)
     # Weighted least squares: N = (X^T W X)^(-1) X^T W y
     XtW = X.T @ W
-    N0 = np.linalg.solve(XtW @ X, XtW @ y)
+    A = XtW @ X
+    b = XtW @ y
+    # least-squares solve
+    N0 = np.linalg.lstsq(A, b, rcond=None)[0]
     return np.log(np.clip(N0, 0, None) + minnorm)
 
 
@@ -149,12 +180,16 @@ class ComponentModel:
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         y = self.flat_data
-        x0 = poisson_initial_guess(X, y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
-        assert np.isfinite(x0).all(), (x0, y, X)
+        mask_unique = unique_components(X)
+        x0 = poisson_initial_guess(X[:,mask_unique], y, self.poisson_guess_data_offset, self.poisson_guess_model_offset)
+        assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
-            poisson_negloglike, x0, args=(X, y),
+            poisson_negloglike, x0, args=(X[:,mask_unique], y),
             jac=poisson_negloglike_grad,
             **self.minimize_kwargs)
+        xfull = np.zeros(len(mask_unique)) + -1e50
+        xfull[mask_unique] = res.x
+        res.x = xfull
         return res
 
     def loglike_poisson(self, component_shapes):
