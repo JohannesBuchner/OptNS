@@ -51,6 +51,7 @@ def poisson_negloglike_grad(lognorms, X, counts):
     grad = (diff @ X) * norms
     return grad
 
+
 def poisson_initial_guess(X, counts, epsilon=0.1):
     """Initial guess for the Poisson normalizations.
 
