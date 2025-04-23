@@ -432,7 +432,7 @@ class ComponentModel:
             list of sampled normalisations
         """
         gauss_reg = self.loglike_gauss_optimize(component_shapes)
-        loglike_profile = self.loglike_poisson(component_shapes)
+        loglike_profile = self.loglike_gauss(component_shapes)
         # get mean
         mean = gauss_reg.coef_
         # Compute covariance matrix
