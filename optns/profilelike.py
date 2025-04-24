@@ -231,7 +231,7 @@ class ComponentModel:
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         if not np.all(self.flat_data.astype(int) == self.flat_data) or not np.all(self.flat_data >= 0):
-            raise AssertionError(f"Data are not counts, cannot use Poisson likelihood")
+            raise AssertionError("Data are not counts, cannot use Poisson likelihood")
         y = self.flat_data
         mask_unique = unique_components(X)
         x0 = poisson_initial_guess_heuristic(
