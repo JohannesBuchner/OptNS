@@ -54,8 +54,9 @@ def test_gauss():
     y = data
     sample_weight = noise**-2
     statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
-    logl = statmodel.loglike_gauss(X)
-    norms_inferred = statmodel.norms_gauss(X)
+    statmodel.update_components(X)
+    logl = statmodel.loglike()
+    norms_inferred = statmodel.norms()
     np.testing.assert_allclose(norms_inferred, [2.87632905, 0.52499782, 5.08684032])
     reg = LinearRegression(positive=True, fit_intercept=False)
     reg.fit(X, y, sample_weight)
@@ -63,7 +64,7 @@ def test_gauss():
     loglike_manual = -0.5 * np.sum((y - y_model)**2 * sample_weight)
     np.testing.assert_allclose(norms_inferred, reg.coef_)
     np.testing.assert_allclose(logl, loglike_manual)
-    samples, _, logl_samples = statmodel.sample_gauss(X, 100000, rng)
+    samples, _, logl_samples = statmodel.sample(100000, rng)
     # samples should be centered at reg.coef
     print(X.shape, samples.shape, logl_samples.shape)
     print(samples.mean(axis=0), reg.coef_)
@@ -93,7 +94,8 @@ def test_poisson_verylowcount():
     for ncounts in 0, 1, 2, 3, 4, 5, 10, 20, 40, 100:
         data = np.array([ncounts])
         statmodel = ComponentModel(1, data)
-        samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 1000000, rng)
+        statmodel.update_components(X)
+        samples, loglike_proposal, loglike_target = statmodel.sample(1000000, rng)
         assert np.all(samples > 0)
         Nsamples = len(samples)
         assert samples.shape == (Nsamples, 1), samples.shape
@@ -134,13 +136,14 @@ def test_poisson_lowcount():
     norms_expected = np.exp(res.x)
 
     statmodel = ComponentModel(3, data)
-    logl = statmodel.loglike_poisson(X)
+    statmodel.update_components(X)
+    logl = statmodel.loglike()
     logl_expected = -poisson_negloglike(res.x, X, data)
     assert np.isclose(logl, logl_expected), (logl, logl_expected)
-    norms_inferred = statmodel.norms_poisson(X)
+    norms_inferred = statmodel.norms()
     np.testing.assert_allclose(norms_inferred, [2.71413583, 0.46963565, 5.45321002], atol=1e-3)
     np.testing.assert_allclose(norms_inferred, norms_expected, atol=0.001)
-    samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 100000, rng)
+    samples, loglike_proposal, loglike_target = statmodel.sample(100000, rng)
     assert np.all(samples > 0)
     Nsamples = len(samples)
     assert samples.shape == (Nsamples, 3), samples.shape
@@ -189,13 +192,14 @@ def test_poisson_highcount():
     norms_expected = np.exp(res.x)
 
     statmodel = ComponentModel(3, data)
-    logl = statmodel.loglike_poisson(X)
+    statmodel.update_components(X)
+    logl = statmodel.loglike()
     logl_expected = -poisson_negloglike(res.x, X, data)
     assert np.isclose(logl, logl_expected), (logl, logl_expected)
-    norms_inferred = statmodel.norms_poisson(X)
+    norms_inferred = statmodel.norms()
     np.testing.assert_allclose(norms_inferred, norms_expected, atol=0.001)
     np.testing.assert_allclose(norms_inferred, [29.940845,  4.736076, 51.151115], atol=0.001)
-    samples, loglike_proposal, loglike_target = statmodel.sample_poisson(X, 100000, rng)
+    samples, loglike_proposal, loglike_target = statmodel.sample(100000, rng)
     assert np.all(samples > 0)
     Nsamples = len(samples)
     assert samples.shape == (Nsamples, 3), samples.shape
@@ -237,9 +241,10 @@ def test_poisson_loglike():
             data = rng.poisson(model)
             if data.sum() == 0: continue
             statmodel = ComponentModel(3, data)
-            norms_inferred = statmodel.norms_poisson(X)
+            statmodel.update_components(X)
+            norms_inferred = statmodel.norms()
             assert np.isfinite(norms_inferred).all(), norms_inferred
-            logl = statmodel.loglike_poisson(X)
+            logl = statmodel.loglike()
             assert np.isfinite(logl), logl
 
 def test_poisson_component_somezero():
@@ -254,9 +259,10 @@ def test_poisson_component_somezero():
     data = rng.poisson(model)
     assert data.sum() > 0
     statmodel = ComponentModel(3, data)
-    norms_inferred = statmodel.norms_poisson(X)
+    statmodel.update_components(X)
+    norms_inferred = statmodel.norms()
     assert np.isfinite(norms_inferred).all(), norms_inferred
-    logl = statmodel.loglike_poisson(X)
+    logl = statmodel.loglike()
     assert np.isfinite(logl), logl
 
 def test_poisson_component_zero():
@@ -272,7 +278,7 @@ def test_poisson_component_zero():
     assert data.sum() > 0
     statmodel = ComponentModel(3, data)
     try:
-        statmodel.norms_poisson(X)
+        statmodel.update_components(X)
         raise Exception()
     except AssertionError:
         pass
@@ -290,8 +296,9 @@ def test_poisson_components_identical():
     data = rng.poisson(model)
     assert data.sum() > 0
     statmodel = ComponentModel(3, data)
-    assert statmodel.norms_poisson(X)[2] == 0
-    logl = statmodel.loglike_poisson(X)
+    statmodel.update_components(X)
+    assert statmodel.norms()[2] == 0
+    logl = statmodel.loglike()
     assert np.isfinite(logl), logl
 
 
@@ -307,8 +314,8 @@ def test_gauss_components_identical():
     data = rng.normal(model, noise)
 
     X = np.transpose([A, B, C])
-    y = data
     sample_weight = noise**-2
     statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
-    assert statmodel.norms_gauss(X)[2] == 0
+    statmodel.update_components(X)
+    assert statmodel.norms()[2] == 0
 

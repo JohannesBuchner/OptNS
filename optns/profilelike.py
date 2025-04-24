@@ -92,8 +92,11 @@ def poisson_laplace_approximation(lognorms, X):
 
     Returns
     -------
-    grad: array
-        vector of gradients
+    mean: array
+        peak of the log-likelihood, exp(lognorms)
+    cov: array
+        covariance of the Gaussian approximation to the log-likelihood,
+        from the inverse Fisher matrix.
     """
     mean = exp(lognorms)
     lambda_hat = mean @ X.T
@@ -102,6 +105,57 @@ def poisson_laplace_approximation(lognorms, X):
     FIM = X.T @ D @ X
     covariance = np.linalg.inv(FIM)
     return mean, covariance
+
+
+def gauss_importance_sample_stable(mean, covariance, size, rng):
+    """Sample from a multivariate Gaussian.
+
+    In case of numerical instability, only the diagonal of the covariance
+    is used (mean-field approximation).
+
+    Parameters
+    ----------
+    mean: array
+        mean of the Gaussian
+    covariance: array
+        covariance matrix of the Gaussian.
+    size: int
+        Number of samples to generate.
+    rng: object
+        Random number generator
+
+    Returns
+    -------
+    samples: array
+        Generated samples
+    logpdf: function
+        logpdf of Gaussian proposal.
+    """
+    try:
+        rv = multivariate_normal(mean, covariance)
+        samples_all = rv.rvs(size=size, random_state=rng).reshape((size, len(mean)))
+        rv_logpdf = rv.logpdf
+    except np.linalg.LinAlgError:
+        # fall back to diagonal approximation
+        stdev = np.diag(covariance)**0.5
+        rv = norm(mean, stdev)
+        samples_all = rng.normal(mean, stdev, size=(size, len(mean))).reshape((size, len(mean)))
+
+        def rv_logpdf(x):
+            """Combine Gaussian logpdf of independent data.
+
+            Parameters
+            ----------
+            x: array
+                observations, 2d array
+
+            Returns
+            -------
+            logprob: array
+                1d array, summed over first axis.
+            """
+            return rv.logpdf(x).sum(axis=1)
+    return samples_all, rv_logpdf
 
 
 def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
@@ -163,80 +217,92 @@ def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
     return np.log(N0)
 
 
-class ComponentModel:
-    """Generalized Additive Model.
+class PoissonModel:
+    """Additive model components with Poisson measurements."""
 
-    Defines likelihoods for observed data,
-    given arbitrary components which are
-    linearly added with non-negative normalisations.
-    """
-
-    def __init__(self, Ncomponents, flat_data, flat_invvar=None, positive=True):
-        """Initialise.
+    def __init__(self, flat_data, positive=True, eps_model=0.1, eps_data=0.1):
+        """Initialise model for Poisson data with additive model components.
 
         Parameters
         ----------
-        Ncomponents: int
-            number of model components
         flat_data: array
-            array of observed data. For the Poisson likelihood functions,
-            must be non-negative integers.
-        flat_invvar: None|array
-            For the Poisson likelihood functions, None.
-            For the Gaussian likelihood function, the inverse variance,
-            `1 / (standard_deviation)^2`, where standard_deviation
-            are the measurement uncertainties.
+            Observed counts (non-negative integer numbers)
         positive: bool
-            whether Gaussian normalisations must be positive.
+            If true, only positive model components and normalisations are allowed.
+        eps_model: float
+            For heuristic initial guess of normalisations, small number to add to model component shapes.
+        eps_data: float
+            For heuristic initial guess of normalisations, small number to add to counts.
         """
-        (self.Ndata,) = flat_data.shape
-        self.flat_data = flat_data
-        if not np.isfinite(self.flat_data).all():
-            raise AssertionError("Invalid data, not finite numbers.")
-        self.flat_invvar = flat_invvar
-        if self.flat_invvar is not None:
-            self.invvar_matrix = np.diag(self.flat_invvar)
-        self.Ncomponents = Ncomponents
-        self.poisson_guess_data_offset = 0.1
-        self.poisson_guess_model_offset = 0.1
-        self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
-        self.cond_threshold = 1e6
-        self.poisson_cov_diagonal = 1e-10
+        if not np.all(flat_data.astype(int) == flat_data) or not np.all(flat_data >= 0):
+            raise AssertionError("Data are not counts, cannot use Poisson likelihood")
         self.positive = positive
-        self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
+        self.guess_data_offset = eps_data
+        self.guess_model_offset = eps_model
+        self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
+        self.flat_data = flat_data
+        self.flat_invvar = None
+        self.res = None
 
-    def loglike_poisson_optimize(self, component_shapes):
-        """Optimize the normalisations assuming a Poisson Additive Model.
+    def update_components(self, component_shapes):
+        """Set the model components.
 
         Parameters
         ----------
         component_shapes: array
             transposed list of the model component vectors.
-
-        Returns
-        -------
-        res: scipy.optimize.OptimizeResult
-            return value of `scipy.optimize.minimize`
         """
-        assert component_shapes.shape == (self.Ndata, self.Ncomponents), (
-            component_shapes.shape,
-            (self.Ndata, self.Ncomponents),
-        )
+        self.mask_unique = unique_components(component_shapes)
         X = component_shapes
-        assert np.isfinite(X).all()
-        if not np.any(X > 0, axis=1).all():
+        if not np.isfinite(X).all():
+            raise AssertionError("Component shapes are not all finite numbers.")
+        if not np.any(np.abs(X) > 0, axis=1).all():
             raise AssertionError("In portions of the data set, all component shapes are zero. Problem is ill-defined.")
-        if not np.any(X > 0, axis=0).all():
+        if not np.any(np.abs(X) > 0, axis=0).all():
             raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
-        if not np.all(self.flat_data.astype(int) == self.flat_data) or not np.all(self.flat_data >= 0):
-            raise AssertionError("Data are not counts, cannot use Poisson likelihood")
+        self.X = X
+        self.optimize()
+
+    def negloglike(self, lognorms):
+        """Compute negative log-likelihood.
+
+        Parameters
+        ----------
+        lognorms: array
+            logarithm of normalisations
+
+        Returns
+        -------
+        float
+            Negative log-likelihood
+        """
+        return poisson_negloglike(lognorms, self.X, self.flat_data)
+
+    def negloglike_grad(self, lognorms):
+        """Compute negative log-likelihood.
+
+        Parameters
+        ----------
+        lognorms: array
+            logarithm of normalisations
+
+        Returns
+        -------
+        float
+            Gradient of the negative log-likelihood w.r.t. lognorms.
+        """
+        return poisson_negloglike_grad(lognorms, self.X, self.flat_data)
+
+    def optimize(self):
+        """Optimize the normalisations."""
         y = self.flat_data
-        mask_unique = unique_components(X)
+        X = self.X
+        mask_unique = self.mask_unique
         x0 = poisson_initial_guess_heuristic(
-            X[:,mask_unique], y,
-            self.poisson_guess_model_offset,self.poisson_guess_data_offset)
+            self.X[:,self.mask_unique], y,
+            self.guess_model_offset, self.guess_data_offset)
         # x0_rigorous = poisson_initial_guess(X[:,mask_unique], y, 0.1, 1e-50)
         assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
@@ -246,58 +312,54 @@ class ComponentModel:
         xfull = np.zeros(len(mask_unique)) + -1e50
         xfull[mask_unique] = res.x
         res.x = xfull
-        return res
+        self.res = res
 
-    def loglike_poisson(self, component_shapes):
-        """Return profile likelihood.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
+    def loglike(self):
+        """Get profile log-likelihood.
 
         Returns
         -------
         loglike: float
-            log-likelihood
+            log-likelihood value at optimized normalisations.
         """
-        res = self.loglike_poisson_optimize(component_shapes)
-        if not res.success:
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        if not self.res.success:
             # give penalty when ill-defined
             return -1e100
-        return -res.fun
+        return -self.res.fun
 
-    def norms_poisson(self, component_shapes):
-        """Return optimal normalisations.
-
-        Normalisations of subsequent identical components will be zero.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
+    def norms(self):
+        """Get optimal component normalisations.
 
         Returns
         -------
         norms: array
-            normalisations, one value for each model component.
+            normalisations that optimize the likelihood for the current component shapes.
         """
-        res = self.loglike_poisson_optimize(component_shapes)
-        return exp(res.x)
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        return exp(self.res.x)
 
-    def sample_poisson(self, component_shapes, size, rng=np.random):
-        """Sample from Poisson likelihood function.
+    def laplace_approximation(self):
+        """Get Laplace approximation.
 
-        Sampling occurs with importance sampling,
-        so the results need to be weighted by
-        `exp(loglike_target-loglike_proposal)`
-        or rejection sampled.
+        Returns
+        -------
+        mean: array
+            optimal component normalisations, same as norms()
+        cov: array
+            covariance matrix, from inverse Fisher matrix.
+        """
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        return poisson_laplace_approximation(self.res.x, self.X)
 
+    def sample(self, size, rng=np.random):
+        """Sample from Laplace approximation to likelihood function.
 
         Parameters
         ----------
-        component_shapes: array
-            transposed list of the model component vectors.
         size: int
             Maximum number of samples to generate.
         rng: object
@@ -314,24 +376,17 @@ class ComponentModel:
         loglike_target: array
             for each sample, the Poisson log-likelihood
         """
-        res = self.loglike_poisson_optimize(component_shapes)
-        X = component_shapes
-        profile_loglike = -res.fun
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        res = self.res
+        X = self.X
+        profile_loglike = self.loglike()
         assert np.isfinite(profile_loglike), res
         # get mean
         counts = self.flat_data
-        mean, covariance = poisson_laplace_approximation(res.x, X)
-        try:
-            rv = multivariate_normal(mean, covariance)
-            samples_all = rv.rvs(size=size, random_state=rng).reshape((size, len(mean)))
-            rv_logpdf = rv.logpdf
-        except np.linalg.LinAlgError:
-            stdev = np.diag(covariance)**0.5
-            rv = norm(mean, stdev)
-            samples_all = rng.normal(mean, stdev, size=(size, len(mean))).reshape((size, len(mean)))
+        mean, covariance = self.laplace_approximation()
+        samples_all, rv_logpdf = gauss_importance_sample_stable(mean, covariance, size, rng=rng)
 
-            def rv_logpdf(x):
-                return rv.logpdf(x).sum(axis=1)
         if self.positive:
             mask = np.all(samples_all > 0, axis=1)
             samples = samples_all[mask, :]
@@ -352,42 +407,85 @@ class ComponentModel:
         # print('full target:', loglike_target, loglike_target - profile_loglike)
         return samples, loglike_proposal, loglike_target
 
-    def loglike_gauss_optimize(self, component_shapes):
-        """Optimize the normalisations assuming a Gaussian data model.
+
+class GaussModel:
+    """Additive model components with Gaussian measurements."""
+
+    def __init__(self, flat_data, flat_invvar, positive, cond_threshold=1e6):
+        """Initialise model for Gaussian data with additive model components.
+
+        Parameters
+        ----------
+        flat_data: array
+            Measurement errors (non-negative integer numbers)
+        flat_invvar: array
+            Inverse Variance of measurement errors (yerr**-2). Must be non-negative
+        positive: bool
+            If true, only positive model components and normalisations are allowed.
+        cond_threshold: float
+            Threshold for numerical stability condition (see `np.linalg.cond`).
+        """
+        if not np.isfinite(flat_data).all():
+            raise AssertionError("Invalid data, not finite numbers.")
+        if not np.isfinite(flat_invvar).all():
+            raise AssertionError("Invalid data, not finite numbers.")
+        if not (flat_invvar >= 0).all():
+            raise AssertionError("Inverse variance must be non-negative")
+        Ndata, = flat_data.shape
+        assert (Ndata,) == flat_invvar.shape, (Ndata, flat_invvar.shape)
+        self.positive = positive
+        self.cond_threshold = cond_threshold
+        self.flat_data = flat_data
+        self.flat_invvar = flat_invvar
+        self.invvar_matrix = np.diag(self.flat_invvar)
+        self.res = None
+        self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
+
+    def update_components(self, component_shapes):
+        """Set the model components.
 
         Parameters
         ----------
         component_shapes: array
             transposed list of the model component vectors.
+        """
+        X = component_shapes
+        if not np.isfinite(X).all():
+            raise AssertionError("Component shapes are not all finite numbers.")
+        if not np.any(np.abs(X) > 0, axis=1).all():
+            raise AssertionError("In portions of the data set, all component shapes are zero. Problem is ill-defined.")
+        if not np.any(np.abs(X) > 0, axis=0).all():
+            raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
+        if self.positive and not np.all(X >= 0):
+            raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
+        self.X = X
+        self.optimize()
+
+    def optimize(self):
+        """Optimize the normalisations assuming a Gaussian data model.
 
         Returns
         -------
         gauss_reg: LinearRegression
             Fitted scikit-learn regressor object.
         """
-        X = component_shapes
-        y = self.flat_data
-        self.gauss_reg.fit(X, y, self.flat_invvar)
-        return self.gauss_reg
+        self.res = self.gauss_reg.fit(self.X, self.flat_data, self.flat_invvar)
 
-    def loglike_gauss(self, component_shapes):
+    def loglike(self):
         """Return profile likelihood.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
 
         Returns
         -------
         loglike: float
             log-likelihood
         """
-        gauss_reg = self.loglike_gauss_optimize(component_shapes)
-        X = component_shapes
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        gauss_reg = self.res
+        X = self.X
         y = self.flat_data
         ypred = gauss_reg.predict(X)
-        loglike = -0.5 * np.sum((ypred - y) ** 2 * self.flat_invvar)
+        loglike_plain = -0.5 * np.sum((ypred - y) ** 2 * self.flat_invvar)
 
         W = self.invvar_matrix
         XTWX = X.T @ W @ X
@@ -396,33 +494,27 @@ class ComponentModel:
             penalty = -1e100 * (1 + self.cond_threshold)
         else:
             penalty = 0
-        return loglike + penalty
+        return loglike_plain + penalty
 
-    def norms_gauss(self, component_shapes):
+    def norms(self):
         """Return optimal normalisations.
 
         Normalisations of subsequent identical components will be zero.
-
-        Parameters
-        ----------
-        component_shapes: array
-            transposed list of the model component vectors.
 
         Returns
         -------
         norms: array
             normalisations, one value for each model component.
         """
-        gauss_reg = self.loglike_gauss_optimize(component_shapes)
-        return gauss_reg.coef_
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        return self.res.coef_
 
-    def sample_gauss(self, component_shapes, size, rng=np.random):
+    def sample(self, size, rng=np.random):
         """Sample from Gaussian covariance matrix.
 
         Parameters
         ----------
-        component_shapes: array
-            transposed list of the model component vectors.
         size: int
             Number of samples to generate.
         rng: object
@@ -437,12 +529,14 @@ class ComponentModel:
         loglike_target: array
             likelihood of optimized point used for importance sampling
         """
-        gauss_reg = self.loglike_gauss_optimize(component_shapes)
-        loglike_profile = self.loglike_gauss(component_shapes)
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        gauss_reg = self.res
+        loglike_profile = self.loglike()
         # get mean
         mean = gauss_reg.coef_
         # Compute covariance matrix
-        X = component_shapes
+        X = self.X
         W = self.invvar_matrix
         XTWX = X.T @ W @ X
         covariance = np.linalg.inv(XTWX)
@@ -465,3 +559,39 @@ class ComponentModel:
         loglike_proposal = loglike_profile + loglike_gauss_proposal
 
         return samples, loglike_proposal, loglike_target
+
+
+def ComponentModel(Ncomponents, flat_data, flat_invvar=None, positive=True, **kwargs):
+    """Generalized Additive Model.
+
+    Defines likelihoods for observed data,
+    given arbitrary components which are
+    linearly added with non-negative normalisations.
+
+    Parameters
+    ----------
+    Ncomponents: int
+        number of model components
+    flat_data: array
+        array of observed data. For the Poisson likelihood functions,
+        must be non-negative integers.
+    flat_invvar: None|array
+        For the Poisson likelihood functions, None.
+        For the Gaussian likelihood function, the inverse variance,
+        `1 / (standard_deviation)^2`, where standard_deviation
+        are the measurement uncertainties.
+    positive: bool
+        whether Gaussian normalisations must be positive.
+    **kwargs: dict
+        additional arguments passed to `PoissonModel` (if flat_invvar is None)
+        or `GaussModel` (otherwise)
+
+    Returns
+    -------
+    <NAME>: <TYPE>
+        <MEANING OF <NAME>>
+    """
+    if flat_invvar is None:
+        return PoissonModel(flat_data, positive=positive, **kwargs)
+    else:
+        return GaussModel(flat_data, flat_invvar, positive=positive, **kwargs)
