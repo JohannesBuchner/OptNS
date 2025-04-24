@@ -166,7 +166,7 @@ class OptNS:
         Nsamples, Nlinear = linear_params.shape
         y_pred = linear_params @ X.T
         assert (y_pred > 0).any(axis=1).all()
-        assert (y_pred > 0).any(axis=0).all()
+        assert Nsamples == 0 or (y_pred > 0).any(axis=0).all(), y_pred
         logprior = self.linear_param_logprior(linear_params)
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
         params[:, :Nlinear] = linear_params
@@ -174,7 +174,7 @@ class OptNS:
         assert np.isfinite(loglike_target).all(), loglike_target
         assert np.isfinite(loglike_proposal).all(), loglike_proposal
         # assert np.isfinite(logprior).all(), logprior
-        assert Nsamples > 0, Nsamples
+        # assert Nsamples > 0, Nsamples
         # print('loglratios:', loglike_target - loglike_proposal, loglike_proposal)
         return y_pred, params, loglike_target + logprior - loglike_proposal - np.log(Nsamples)
 
