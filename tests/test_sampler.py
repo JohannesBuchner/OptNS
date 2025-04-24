@@ -329,30 +329,11 @@ def test_nonlinear_poisson_vs_full_nestedsampling():
     plt.savefig('test_poisson_corner.pdf')
     plt.close()
     
-    
-
-    #fig = corner.corner(samples, titles=['A', 'B', 'tau'], labels=['A', 'B', 'tau'], show_titles=True, plot_datapoints=False, plot_density=False)
-    #corner.corner(fullsamples, fig=fig, color='navy', plot_datapoints=False, plot_density=False, weights=weights)
-    #corner.corner(refrun_result['samples'], fig=fig, color='red', truths=[1, 1, 5], plot_datapoints=False, plot_density=False)
-    """axes = np.array(fig.axes).reshape((3, 3))
-    plt.sca(axes[2,2])
-    axes[2,2].clear()
-    kwargs = dict(bins=np.arange(0, 10, 1.0), density=True, histtype='step')
-    axes[2,2].hist(samples[:,2], **kwargs, color='k', label='resampled')
-    axes[2,2].hist(fullsamples[:,2], **kwargs, color='green', label='proposals')
-    axes[2,2].hist(fullsamples[:,2], **kwargs, color='navy', label='weighted samples', weights=weights)
-    axes[2,2].hist(optresults['samples'][:,-1], **kwargs, color='purple', label='profile samples')
-    axes[2,2].hist(refrun_result['samples'][:,2], **kwargs, color='red', label='UltraNest')
-    axes[2,2].set_yticks([])
-    axes[2,2].set_xlim(0, 10)
-    axes[2,2].legend()"""
-    #plt.savefig('test_poisson_corner.pdf')
-
     # check agreement
-    assert_allclose(std, ref_std, rtol=0.2)
-    assert_allclose(mean[0], ref_mean[0], atol=std[0] * 0.2)
-    assert_allclose(mean[1], ref_mean[1], atol=std[1] * 0.2)
-    assert_allclose(mean[2], ref_mean[2], atol=std[2] * 0.2)
+    assert_allclose(std, ref_std, rtol=0.05)
+    assert_allclose(mean[0], ref_mean[0], atol=std[0] * 0.1)
+    assert_allclose(mean[1], ref_mean[1], atol=std[1] * 0.1)
+    assert_allclose(mean[2], ref_mean[2], atol=std[2] * 0.12)
     assert_allclose(cov, ref_cov, atol=0.01, rtol=0.1)
 
     """
