@@ -355,3 +355,63 @@ def test_nonlinear_poisson_vs_full_nestedsampling():
     print(optresults['ncall'], refrun_result['ncall'])
     assert optresults['ncall'] < refrun_result['ncall'] // 5 - 100  # five times faster
 
+def additive_invvar_function(params):
+    return 1. / (noise**2 + params[-1]**2)
+
+def fractional_invvar_function(params):
+    return 1. / (noise**2 + (data_linear * (1. + params[-1]))**2)
+
+def test_nonlinear_gauss_variable_error():
+    np.random.seed(123)
+    statmodel = OptNS(
+        ['A', 'B'], ['tau'], compute_model_components_nonlinear,
+        nonlinear_param_transform, linear_param_logprior_flat,
+        data_linear, noise**-2, positive=False)
+    optsampler = statmodel.ReactiveNestedSampler()
+    optresults = optsampler.run(**ultranest_run_kwargs)
+    optsampler.print_results()
+    fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 100)
+    samples, y_pred_samples = statmodel.resample(fullsamples, weights, y_preds)
+    mean = np.mean(samples, axis=0)
+    print('mean:', mean)
+    std = np.std(samples, axis=0)
+    print('std:', std)
+    print('logz:', optresults['logz'])
+
+    np.random.seed(123)
+    statmodel2 = OptNS(
+        ['A', 'B'], ['tau', 'fracsys'], lambda params: compute_model_components_nonlinear(params[:1]),
+        nonlinear_param_transform, linear_param_logprior_flat,
+        data_linear, noise**-2, compute_invvar=fractional_invvar_function, positive=False)
+    optsampler2 = statmodel2.ReactiveNestedSampler()
+    optresults2 = optsampler2.run(**ultranest_run_kwargs)
+    optsampler2.print_results()
+    fullsamples2, weights2, y_preds2 = statmodel2.get_weighted_samples(optresults2['samples'], 100)
+    samples2, y_pred_samples2 = statmodel2.resample(fullsamples2, weights2, y_preds2)
+    mean2 = np.mean(samples2, axis=0)
+    print('mean2:', mean2)
+    std2 = np.std(samples2, axis=0)
+    print('std2:', std2)
+    print('logz2:', optresults2['logz'])
+    assert (samples2[:,-1] > 0.05).mean() > 0.5, 'needed extra noise'
+    assert (std2[:-1] > std).all()
+
+    np.random.seed(123)
+    statmodel3 = OptNS(
+        ['A', 'B'], ['tau', 'addnoise'], lambda params: compute_model_components_nonlinear(params[:1]),
+        nonlinear_param_transform, linear_param_logprior_flat,
+        data_linear, noise**-2, compute_invvar=additive_invvar_function, positive=False)
+    optsampler3 = statmodel3.ReactiveNestedSampler()
+    optresults3 = optsampler3.run(**ultranest_run_kwargs)
+    optsampler3.print_results()
+    fullsamples3, weights3, y_preds3 = statmodel3.get_weighted_samples(optresults3['samples'], 100)
+    samples3, y_pred_samples3 = statmodel3.resample(fullsamples3, weights3, y_preds3)
+    mean3 = np.mean(samples3, axis=0)
+    print('mean3:', mean3)
+    std3 = np.std(samples3, axis=0)
+    print('std3:', std3)
+    print('logz3:', optresults3['logz'])
+    assert (samples3[:,-1] > 0.1).mean() > 0.95, 'needed extra noise'
+    assert (std3[:-1] > std).all()
+    assert optresults['logz'] < optresults2['logz'] < optresults3['logz']
+

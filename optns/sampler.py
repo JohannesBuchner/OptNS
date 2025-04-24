@@ -40,6 +40,7 @@ class OptNS:
         flat_data,
         flat_invvar=None,
         positive=True,
+        compute_invvar=None,
     ):
         """Initialise.
 
@@ -66,6 +67,8 @@ class OptNS:
             are the measurement uncertainties.
         positive: bool
             whether Gaussian normalisations must be positive.
+        compute_invvar: None|func
+            function which computes the flat_invvar, given the non-linear parameters.
         """
         Ncomponents = len(linear_param_names)
         self.linear_param_names = linear_param_names
@@ -73,7 +76,8 @@ class OptNS:
         self.nonlinear_param_transform = nonlinear_param_transform
         self.linear_param_logprior = linear_param_logprior
         self.compute_model_components = compute_model_components
-        self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar)
+        self.compute_invvar = compute_invvar
+        self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar, positive=positive)
 
     def prior_predictive_check_plot(self, ax, size=20):
         """Create prior predictive check visualisation.
@@ -97,6 +101,8 @@ class OptNS:
         for i in range(size):
             u = np.random.uniform(size=len(self.nonlinear_param_names))
             nonlinear_params = self.nonlinear_param_transform(u)
+            if self.compute_invvar is not None:
+                self.statmodel.update_noise(self.compute_invvar(nonlinear_params))
             X = self.compute_model_components(nonlinear_params)
             self.statmodel.update_components(X)
             norms = self.statmodel.norms()
@@ -133,6 +139,8 @@ class OptNS:
         for i, sample in enumerate(samples):
             norms = sample[:len(self.linear_param_names)]
             nonlinear_params = sample[len(self.linear_param_names):]
+            if self.compute_invvar is not None:
+                self.statmodel.update_noise(self.compute_invvar(nonlinear_params))
             X = self.compute_model_components(nonlinear_params)
             for j, norm in enumerate(norms):
                 if i == 0:
@@ -162,6 +170,8 @@ class OptNS:
         logweights: array
             Log of importance sampling weights of the posterior samples. shape: (Nsamples,)
         """
+        if self.compute_invvar is not None:
+            self.statmodel.update_noise(self.compute_invvar(nonlinear_params))
         X = self.compute_model_components(nonlinear_params)
         self.statmodel.update_components(X)
         linear_params, loglike_proposal, loglike_target = (
@@ -169,7 +179,7 @@ class OptNS:
         )
         Nsamples, Nlinear = linear_params.shape
         y_pred = linear_params @ X.T
-        assert (y_pred > 0).any(axis=1).all()
+        assert not self.statmodel.positive or (y_pred > 0).any(axis=1).all(), (y_pred, X, linear_params)
         assert Nsamples == 0 or (y_pred > 0).any(axis=0).all(), y_pred
         logprior = self.linear_param_logprior(linear_params)
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
@@ -195,6 +205,8 @@ class OptNS:
         loglike: float
             log-likelihood
         """
+        if self.compute_invvar is not None:
+            self.statmodel.update_noise(self.compute_invvar(nonlinear_params))
         X = self.compute_model_components(nonlinear_params)
         assert np.isfinite(X).all(), X
         X_shape_expected = (self.statmodel.Ndata, len(self.linear_param_names))
