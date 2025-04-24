@@ -264,7 +264,7 @@ class PoissonModel:
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         self.X = X
-        self.optimize()
+        self._optimize()
 
     def negloglike(self, lognorms):
         """Compute negative log-likelihood.
@@ -296,7 +296,7 @@ class PoissonModel:
         """
         return poisson_negloglike_grad(lognorms, self.X, self.flat_data)
 
-    def optimize(self):
+    def _optimize(self):
         """Optimize the normalisations."""
         y = self.flat_data
         X = self.X
@@ -470,9 +470,9 @@ class GaussModel:
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         self.X = X
-        self.optimize()
+        self._optimize()
 
-    def optimize(self):
+    def _optimize(self):
         """Optimize the normalisations assuming a Gaussian data model.
 
         Returns
