@@ -88,7 +88,9 @@ class OptNS:
         if self.statmodel.flat_invvar is None:
             ax.plot(self.statmodel.flat_data, 'o ', ms=2, mfc='none', mec='k')
         else:
-            ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
+            ax.errorbar(
+                x=np.arange(self.statmodel.Ndata),
+                y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
         ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
         colors = []
 
@@ -122,7 +124,9 @@ class OptNS:
         if self.statmodel.flat_invvar is None:
             ax.plot(self.statmodel.flat_data, 'o ', ms=2, mfc='none', mec='k')
         else:
-            ax.errorbar(y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
+            ax.errorbar(
+                x=np.arange(self.statmodel.Ndata),
+                y=self.statmodel.flat_data, yerr=self.statmodel.flat_invvar**-0.5)
         ax.set_xlim(-0.5, len(self.statmodel.flat_data) + 0.5)
         colors = []
 
@@ -193,6 +197,9 @@ class OptNS:
         """
         X = self.compute_model_components(nonlinear_params)
         assert np.isfinite(X).all(), X
+        X_shape_expected = (self.statmodel.Ndata, len(self.linear_param_names))
+        if X.shape != X_shape_expected:
+            raise AssertionError(f'The compute_model_components function should return shape (#data, #linear_params)={X_shape_expected}, but got {X.shape}')
         self.statmodel.update_components(X)
         return self.statmodel.loglike()
 
@@ -247,12 +254,8 @@ class OptNS:
         Nsampled = 0
         logweights = np.empty(Nmaxsamples)
         y_preds = np.empty((Nmaxsamples, self.statmodel.Ndata))
-        fullsamples = np.empty(
-            (
-                Nmaxsamples,
-                len(self.linear_param_names) + len(self.nonlinear_param_names),
-            )
-        )
+        Nparams = len(self.linear_param_names) + len(self.nonlinear_param_names)
+        fullsamples = np.empty((Nmaxsamples, Nparams))
         for nonlinear_params in tqdm.tqdm(optsamples):
             y_pred_i, fullsamples_i, logweights_i = self.optlinearsample(
                 nonlinear_params, size=oversample_factor
