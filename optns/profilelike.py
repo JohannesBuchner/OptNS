@@ -427,19 +427,29 @@ class GaussModel:
         """
         if not np.isfinite(flat_data).all():
             raise AssertionError("Invalid data, not finite numbers.")
-        if not np.isfinite(flat_invvar).all():
-            raise AssertionError("Invalid data, not finite numbers.")
-        if not (flat_invvar >= 0).all():
-            raise AssertionError("Inverse variance must be non-negative")
         Ndata, = flat_data.shape
         assert (Ndata,) == flat_invvar.shape, (Ndata, flat_invvar.shape)
         self.positive = positive
         self.cond_threshold = cond_threshold
         self.flat_data = flat_data
-        self.flat_invvar = flat_invvar
-        self.invvar_matrix = np.diag(self.flat_invvar)
+        self.update_noise(flat_invvar)
         self.res = None
         self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
+
+    def update_noise(self, flat_invvar):
+        """Set the measurement error.
+
+        Parameters
+        ----------
+        flat_invvar: array
+            Inverse Variance of measurement errors (yerr**-2). Must be non-negative
+        """
+        if not (flat_invvar > 0).all():
+            raise AssertionError("Inverse variance must be positive")
+        self.flat_invvar = flat_invvar
+        self.invvar_matrix = np.diag(self.flat_invvar)
+        # 1 / sqrt(2 pi sigma^2) term:
+        self.loglike_prefactor = 0.5 * np.sum(np.log(self.flat_invvar / (2 * np.pi)))
 
     def update_components(self, component_shapes):
         """Set the model components.
@@ -481,11 +491,8 @@ class GaussModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        gauss_reg = self.res
         X = self.X
-        y = self.flat_data
-        ypred = gauss_reg.predict(X)
-        loglike_plain = -0.5 * np.sum((ypred - y) ** 2 * self.flat_invvar)
+        loglike_plain = -0.5 * self.chi2() + self.loglike_prefactor
 
         W = self.invvar_matrix
         XTWX = X.T @ W @ X
@@ -495,6 +502,19 @@ class GaussModel:
         else:
             penalty = 0
         return loglike_plain + penalty
+
+    def chi2(self):
+        """Return chi-square.
+
+        Returns
+        -------
+        chi2: float
+            Inverse variance weighted sum of squared deviations.
+        """
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        ypred = self.res.predict(self.X)
+        return np.sum((ypred - self.flat_data) ** 2 * self.flat_invvar)
 
     def norms(self):
         """Return optimal normalisations.
@@ -555,7 +575,7 @@ class GaussModel:
         loglike_target = -0.5 * np.sum(
             (y_pred - self.flat_data)**2 * self.flat_invvar,
             axis=1,
-        )
+        ) + self.loglike_prefactor
         loglike_proposal = loglike_profile + loglike_gauss_proposal
 
         return samples, loglike_proposal, loglike_target

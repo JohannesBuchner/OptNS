@@ -61,7 +61,9 @@ def test_gauss():
     reg = LinearRegression(positive=True, fit_intercept=False)
     reg.fit(X, y, sample_weight)
     y_model = X @ reg.coef_
-    loglike_manual = -0.5 * np.sum((y - y_model)**2 * sample_weight)
+    loglike_manual_prefactor = np.sum(np.log(1. / np.sqrt(2 * np.pi * noise**2)))
+    np.testing.assert_allclose(loglike_manual_prefactor, statmodel.loglike_prefactor)
+    loglike_manual = -0.5 * np.sum((y - y_model)**2 * sample_weight) + loglike_manual_prefactor
     np.testing.assert_allclose(norms_inferred, reg.coef_)
     np.testing.assert_allclose(logl, loglike_manual)
     samples, _, logl_samples = statmodel.sample(100000, rng)
@@ -71,7 +73,7 @@ def test_gauss():
     np.testing.assert_allclose(samples.mean(axis=0), reg.coef_, atol=0.0003)
     #y_model_samples = np.einsum('ji,ki->kj', X, samples)
     y_model_samples = samples @ X.T
-    loglike_manual_samples = -0.5 * np.sum((y - y_model_samples)**2 * sample_weight, axis=1)
+    loglike_manual_samples = -0.5 * np.sum((y - y_model_samples)**2 * sample_weight, axis=1) + loglike_manual_prefactor
     print(loglike_manual_samples.shape, logl_samples.shape, logl_samples[0], loglike_manual_samples[0])
     np.testing.assert_allclose(logl_samples, loglike_manual_samples)
     assert np.all(samples > 0)
