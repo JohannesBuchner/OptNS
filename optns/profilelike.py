@@ -230,6 +230,8 @@ class ComponentModel:
             raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
+        if not np.all(self.flat_data.astype(int) == self.flat_data) or not np.all(self.flat_data >= 0):
+            raise AssertionError(f"Data are not counts, cannot use Poisson likelihood")
         y = self.flat_data
         mask_unique = unique_components(X)
         x0 = poisson_initial_guess_heuristic(
@@ -430,6 +432,10 @@ class ComponentModel:
         -------
         samples: array
             list of sampled normalisations
+        loglike_proposal: array
+            likelihood for sampled points
+        loglike_target: array
+            likelihood of optimized point used for importance sampling
         """
         gauss_reg = self.loglike_gauss_optimize(component_shapes)
         loglike_profile = self.loglike_gauss(component_shapes)
@@ -453,7 +459,7 @@ class ComponentModel:
         y_pred = samples @ X.T
         loglike_gauss_proposal = rv.logpdf(samples) - rv.logpdf(mean)
         loglike_target = -0.5 * np.sum(
-            ((y_pred - self.flat_data) * self.flat_invvar) ** 2,
+            (y_pred - self.flat_data)**2 * self.flat_invvar,
             axis=1,
         )
         loglike_proposal = loglike_profile + loglike_gauss_proposal
