@@ -588,8 +588,8 @@ def ComponentModel(Ncomponents, flat_data, flat_invvar=None, positive=True, **kw
 
     Returns
     -------
-    <NAME>: <TYPE>
-        <MEANING OF <NAME>>
+    model: object
+        `PoissonModel` if flat_invvar is None or otherwise `GaussModel`
     """
     if flat_invvar is None:
         return PoissonModel(flat_data, positive=positive, **kwargs)
