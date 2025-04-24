@@ -240,6 +240,7 @@ class PoissonModel:
         self.guess_data_offset = eps_data
         self.guess_model_offset = eps_model
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
+        self.Ndata, = flat_data.shape
         self.flat_data = flat_data
         self.flat_invvar = None
         self.res = None
@@ -427,8 +428,8 @@ class GaussModel:
         """
         if not np.isfinite(flat_data).all():
             raise AssertionError("Invalid data, not finite numbers.")
-        Ndata, = flat_data.shape
-        assert (Ndata,) == flat_invvar.shape, (Ndata, flat_invvar.shape)
+        self.Ndata, = flat_data.shape
+        assert (self.Ndata,) == flat_invvar.shape, (self.Ndata, flat_invvar.shape)
         self.positive = positive
         self.cond_threshold = cond_threshold
         self.flat_data = flat_data

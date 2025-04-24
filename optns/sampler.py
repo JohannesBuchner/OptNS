@@ -96,10 +96,8 @@ class OptNS:
             u = np.random.uniform(size=len(self.nonlinear_param_names))
             nonlinear_params = self.nonlinear_param_transform(u)
             X = self.compute_model_components(nonlinear_params)
-            if self.statmodel.flat_invvar is None:
-                norms = self.statmodel.norms_poisson(X)
-            else:
-                norms = self.statmodel.norms_gauss(X)
+            self.statmodel.update_components(X)
+            norms = self.statmodel.norms()
 
             for j, norm in enumerate(norms):
                 if i == 0:
@@ -161,14 +159,10 @@ class OptNS:
             Log of importance sampling weights of the posterior samples. shape: (Nsamples,)
         """
         X = self.compute_model_components(nonlinear_params)
-        if self.statmodel.flat_invvar is None:
-            linear_params, loglike_proposal, loglike_target = (
-                self.statmodel.sample_poisson(X, size)
-            )
-        else:
-            linear_params, loglike_proposal, loglike_target = (
-                self.statmodel.sample_gauss(X, size)
-            )
+        self.statmodel.update_components(X)
+        linear_params, loglike_proposal, loglike_target = (
+            self.statmodel.sample(size=size)
+        )
         Nsamples, Nlinear = linear_params.shape
         y_pred = linear_params @ X.T
         assert (y_pred > 0).any(axis=1).all()
@@ -199,10 +193,8 @@ class OptNS:
         """
         X = self.compute_model_components(nonlinear_params)
         assert np.isfinite(X).all(), X
-        if self.statmodel.flat_invvar is None:
-            return self.statmodel.loglike_poisson(X)
-        else:
-            return self.statmodel.loglike_gauss(X)
+        self.statmodel.update_components(X)
+        return self.statmodel.loglike()
 
     def ReactiveNestedSampler(self, **sampler_kwargs):
         """Create a nested sampler.
