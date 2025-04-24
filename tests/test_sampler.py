@@ -58,6 +58,62 @@ def test_trivial_OLS():
     assert_allclose(y_pred_samples.mean(), 42.0, rtol=0.001)
     assert_allclose(y_pred_samples.std(), 1.0, rtol=0.001)
 
+def test_trivial_OLS_linearparam_priors():
+    data_mean = 42.0
+    prior_mean = 40.0
+    prior_sigma = 3.45
+    measurement_sigma = 0.312
+    y = np.array([data_mean])
+    yerr = np.array([measurement_sigma])
+    
+    # weighted sum of 42 +- 1 and 40 +- 1.0
+    expected_mean = (data_mean * prior_sigma**2 + prior_mean * measurement_sigma**2) / (measurement_sigma**2 + prior_sigma**2)
+    expected_std = ((measurement_sigma**-2 + prior_sigma**-2))**-0.5
+
+    linear_param_names = ['A']
+    nonlinear_param_names = []
+    def compute_model_components(params):
+        return np.transpose([[1.0], ])
+    def nonlinear_param_transform(params):
+        return params
+    def linear_param_logprior(params):
+        # 40 +- 2
+        return -0.5 * ((params[:,0] - 40) / prior_sigma)**2
+    
+    np.random.seed(431)
+    statmodel = OptNS(
+        linear_param_names, nonlinear_param_names, compute_model_components,
+        nonlinear_param_transform, linear_param_logprior,
+        y, yerr**-2)
+
+    # create a sampler from this
+    optsampler = statmodel.ReactiveNestedSampler(
+        log_dir='run-trivial-OLS', resume='overwrite')
+    optresults = optsampler.run(max_num_improvement_loops=0, frac_remain=0.5)
+    optsampler.print_results()
+    fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 2500)
+    assert not np.allclose(weights, 1. / len(weights)), 'expecting some reweighting!'
+    assert fullsamples.shape == (2500 * len(optresults['samples']), 1)
+
+    # verify that samples are normal distributed
+    assert_allclose(fullsamples.mean(), data_mean, rtol=0.001)
+    assert_allclose(fullsamples.std(), measurement_sigma, rtol=0.001)
+
+    # to obtain equally weighted samples, we resample
+    # this respects the effective sample size. If you get too few samples here,
+    # crank up the number just above.
+    samples, y_pred_samples = statmodel.resample(fullsamples, weights, y_preds)
+    print(f'Obtained {len(samples)} equally weighted posterior samples')
+
+    assert np.all(samples[:,0] == y_pred_samples[:,0])
+    # verify that samples are normal distributed
+    assert_allclose(samples.mean(), expected_mean, rtol=0.001)
+    assert_allclose(samples.std(), expected_std, rtol=0.001)
+
+    # verify that samples are normal distributed
+    assert_allclose(y_pred_samples.mean(), expected_mean, rtol=0.001)
+    assert_allclose(y_pred_samples.std(), expected_std, rtol=0.001)
+
 
 SNR = 1.0
 Ndata = 10
