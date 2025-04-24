@@ -459,6 +459,7 @@ class GaussModel:
         component_shapes: array
             transposed list of the model component vectors.
         """
+        assert component_shapes.ndim == 2
         X = component_shapes
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")

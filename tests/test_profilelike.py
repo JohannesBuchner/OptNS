@@ -88,6 +88,18 @@ def test_gauss():
     plt.close()
 
 
+def test_trivial_OLS():
+    y = np.array([42.0])
+    yerr = np.array([1.0])
+    X = np.transpose([[1.]])
+    statmodel = ComponentModel(1, y, flat_invvar=yerr**-2)
+    statmodel.update_components(X)
+    chi2 = statmodel.chi2()
+    assert chi2 == 0
+    norms_inferred = statmodel.norms()
+    assert norms_inferred == 42.0
+
+
 def test_poisson_verylowcount():
     x = np.ones(1)
     A = 0 * x + 1
