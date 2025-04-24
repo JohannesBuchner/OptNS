@@ -3,7 +3,6 @@ import numpy as np
 from numpy import exp, log
 from scipy.optimize import minimize
 from scipy.stats import multivariate_normal, norm
-from sklearn.linear_model import LinearRegression
 
 
 def unique_components(X, tol=1e-12):
@@ -435,7 +434,6 @@ class GaussModel:
         self.flat_data = flat_data
         self.update_noise(flat_invvar)
         self.res = None
-        self.gauss_reg = LinearRegression(positive=self.positive, fit_intercept=False)
 
     def update_noise(self, flat_invvar):
         """Set the measurement error.
@@ -448,6 +446,7 @@ class GaussModel:
         if not (flat_invvar > 0).all():
             raise AssertionError("Inverse variance must be positive")
         self.flat_invvar = flat_invvar
+        self.W = np.sqrt(flat_invvar)
         self.invvar_matrix = np.diag(self.flat_invvar)
         # 1 / sqrt(2 pi sigma^2) term:
         self.loglike_prefactor = 0.5 * np.sum(np.log(self.flat_invvar / (2 * np.pi)))
@@ -470,6 +469,14 @@ class GaussModel:
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         self.X = X
+        self.Xw = X * self.W[:, None]
+        self.yw = self.flat_data * self.W
+        self.XT_X = self.Xw.T @ self.Xw
+        self.XT_y = self.Xw.T @ self.yw
+
+        # self.W = self.invvar_matrix
+        # self.XTWX = X.T @ W @ X
+        self.cond = np.linalg.cond(self.XT_X)
         self._optimize()
 
     def _optimize(self):
@@ -480,7 +487,11 @@ class GaussModel:
         gauss_reg: LinearRegression
             Fitted scikit-learn regressor object.
         """
-        self.res = self.gauss_reg.fit(self.X, self.flat_data, self.flat_invvar)
+        if self.cond > self.cond_threshold:
+            self.res = np.linalg.pinv(self.XT_X, rcond=self.cond_threshold) @ self.XT_y
+        else:
+            self.res = np.linalg.solve(self.XT_X, self.XT_y)
+        # self.res = self.gauss_reg.fit(self.X, self.flat_data, self.flat_invvar)
 
     def loglike(self):
         """Return profile likelihood.
@@ -492,13 +503,9 @@ class GaussModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        X = self.X
         loglike_plain = -0.5 * self.chi2() + self.loglike_prefactor
 
-        W = self.invvar_matrix
-        XTWX = X.T @ W @ X
-        cond = np.linalg.cond(XTWX)
-        if cond > self.cond_threshold:
+        if self.cond > self.cond_threshold:
             penalty = -1e100 * (1 + self.cond_threshold)
         else:
             penalty = 0
@@ -514,7 +521,7 @@ class GaussModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        ypred = self.res.predict(self.X)
+        ypred = np.dot(self.X, self.res)
         return np.sum((ypred - self.flat_data) ** 2 * self.flat_invvar)
 
     def norms(self):
@@ -529,7 +536,7 @@ class GaussModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        return self.res.coef_
+        return self.res
 
     def sample(self, size, rng=np.random):
         """Sample from Gaussian covariance matrix.
@@ -552,15 +559,11 @@ class GaussModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        gauss_reg = self.res
+        mean = self.res
         loglike_profile = self.loglike()
-        # get mean
-        mean = gauss_reg.coef_
         # Compute covariance matrix
         X = self.X
-        W = self.invvar_matrix
-        XTWX = X.T @ W @ X
-        covariance = np.linalg.inv(XTWX)
+        covariance = np.linalg.inv(self.XT_X)
         samples_all = rng.multivariate_normal(mean, covariance, size=size)
 
         rv = multivariate_normal(mean, covariance)

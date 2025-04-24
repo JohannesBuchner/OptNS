@@ -319,5 +319,6 @@ def test_gauss_components_identical():
     sample_weight = noise**-2
     statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
     statmodel.update_components(X)
+    assert statmodel.cond > 1e6
     assert statmodel.norms()[2] == 0
 
