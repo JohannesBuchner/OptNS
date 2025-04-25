@@ -3,7 +3,7 @@ import numpy as np
 import tqdm
 from ultranest import ReactiveNestedSampler
 
-from .profilelike import ComponentModel
+from .profilelike import ComponentModel, GPModel
 
 
 def ess(w):
@@ -41,6 +41,7 @@ class OptNS:
         flat_invvar=None,
         positive=True,
         compute_invvar=None,
+        gp=None,
     ):
         """Initialise.
 
@@ -77,7 +78,10 @@ class OptNS:
         self.linear_param_logprior = linear_param_logprior
         self.compute_model_components = compute_model_components
         self.compute_invvar = compute_invvar
-        self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar, positive=positive)
+        if gp is not None:
+            self.statmodel = GPModel(flat_data, gp=gp, positive=positive)
+        else:
+            self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar, positive=positive)
 
     def prior_predictive_check_plot(self, ax, size=20):
         """Create prior predictive check visualisation.
@@ -115,7 +119,7 @@ class OptNS:
                     l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
 
             y_pred = norms @ X.T
-            ax.plot(y_pred, alpha=0.3, color='k', lw=1)
+            ax.plot(y_pred, alpha=0.3, color='k', lw=1, label='total' if i == 0 else None)
 
     def posterior_predictive_check_plot(self, ax, samples):
         """Create posterior predictive check visualisation.
@@ -149,7 +153,7 @@ class OptNS:
                 else:
                     l, = ax.plot(norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
             y_pred = norms @ X.T
-            ax.plot(y_pred, alpha=0.3, color='k', lw=1)
+            ax.plot(y_pred, alpha=0.3, color='k', lw=1, label='total' if i == 0 else None)
 
     def optlinearsample(self, nonlinear_params, size):
         """Sample linear parameters conditional on non-linear parameters.
@@ -180,7 +184,7 @@ class OptNS:
         Nsamples, Nlinear = linear_params.shape
         y_pred = linear_params @ X.T
         assert not self.statmodel.positive or (y_pred > 0).any(axis=1).all(), (y_pred, X, linear_params)
-        assert Nsamples == 0 or (y_pred > 0).any(axis=0).all(), y_pred
+        assert Nsamples == 0 or not self.statmodel.positive or (y_pred > 0).any(axis=0).all(), y_pred
         logprior = self.linear_param_logprior(linear_params)
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
         params[:, :Nlinear] = linear_params

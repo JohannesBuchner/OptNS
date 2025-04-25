@@ -481,18 +481,11 @@ class GaussModel:
         self._optimize()
 
     def _optimize(self):
-        """Optimize the normalisations assuming a Gaussian data model.
-
-        Returns
-        -------
-        gauss_reg: LinearRegression
-            Fitted scikit-learn regressor object.
-        """
+        """Optimize the normalisations."""
         if self.cond > self.cond_threshold:
             self.res = np.linalg.pinv(self.XT_X, rcond=self.cond_threshold) @ self.XT_y
         else:
             self.res = np.linalg.solve(self.XT_X, self.XT_y)
-        # self.res = self.gauss_reg.fit(self.X, self.flat_data, self.flat_invvar)
 
     def loglike(self):
         """Return profile likelihood.
@@ -507,7 +500,7 @@ class GaussModel:
         loglike_plain = -0.5 * self.chi2() + self.loglike_prefactor
 
         if self.cond > self.cond_threshold:
-            penalty = -1e100 * (1 + self.cond_threshold)
+            penalty = -1e100 * (1 + self.cond)
         else:
             penalty = 0
         return loglike_plain + penalty
@@ -581,6 +574,142 @@ class GaussModel:
             (y_pred - self.flat_data)**2 * self.flat_invvar,
             axis=1,
         ) + self.loglike_prefactor
+        loglike_proposal = loglike_profile + loglike_gauss_proposal
+
+        return samples, loglike_proposal, loglike_target
+
+
+class GPModel:
+    """Additive model components with Gaussian Process correlated measurements."""
+
+    def __init__(self, flat_data, gp, positive, cond_threshold=1e6):
+        """Initialise model for Gaussian data with additive model components.
+
+        Parameters
+        ----------
+        flat_data: array
+            Measurement errors (non-negative integer numbers)
+        gp: object
+            Gaussian process object from george or celerite
+        positive: bool
+            If true, only positive model components and normalisations are allowed.
+        cond_threshold: float
+            Threshold for numerical stability condition (see `np.linalg.cond`).
+        """
+        if not np.isfinite(flat_data).all():
+            raise AssertionError("Invalid data, not finite numbers.")
+        self.Ndata, = flat_data.shape
+        self.positive = positive
+        self.cond_threshold = cond_threshold
+        self.flat_data = flat_data
+        self.gp = gp
+        self.res = None
+
+    def update_components(self, component_shapes):
+        """Set the model components.
+
+        Parameters
+        ----------
+        component_shapes: array
+            transposed list of the model component vectors.
+        """
+        assert component_shapes.ndim == 2
+        X = component_shapes
+        if not np.isfinite(X).all():
+            raise AssertionError("Component shapes are not all finite numbers.")
+        if not np.any(np.abs(X) > 0, axis=1).all():
+            raise AssertionError("In portions of the data set, all component shapes are zero. Problem is ill-defined.")
+        if not np.any(np.abs(X) > 0, axis=0).all():
+            raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
+        if self.positive and not np.all(X >= 0):
+            raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
+        self.X = X
+        self.Kinv_X = self.gp.apply_inverse(X)
+        self.Kinv_y = self.gp.apply_inverse(self.flat_data)
+        self.XTKinvX = self.X.T @ self.Kinv_X
+        self.XTKinvy = self.X.T @ self.Kinv_y
+
+        self.cond = np.linalg.cond(self.XTKinvX)
+        self._optimize()
+
+    def _optimize(self):
+        """Optimize the normalisations."""
+        if self.cond > self.cond_threshold:
+            self.res = np.linalg.pinv(self.XTKinvX, rcond=self.cond_threshold) @ self.XTKinvy
+        else:
+            self.res = np.linalg.solve(self.XTKinvX, self.XTKinvy)
+
+    def loglike(self):
+        """Return profile likelihood.
+
+        Returns
+        -------
+        loglike: float
+            log-likelihood
+        """
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        y_pred = self.res @ self.X.T
+        loglike_plain = self.gp.log_likelihood(self.flat_data - y_pred) + self.gp.log_prior()
+
+        if self.cond > self.cond_threshold:
+            penalty = -1e100 * (1 + self.cond)
+        else:
+            penalty = 0
+        return loglike_plain + penalty
+
+    def norms(self):
+        """Return optimal normalisations.
+
+        Normalisations of subsequent identical components will be zero.
+
+        Returns
+        -------
+        norms: array
+            normalisations, one value for each model component.
+        """
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        return self.res
+
+    def sample(self, size, rng=np.random):
+        """Sample from Gaussian covariance matrix.
+
+        Parameters
+        ----------
+        size: int
+            Number of samples to generate.
+        rng: object
+            Random number generator
+
+        Returns
+        -------
+        samples: array
+            list of sampled normalisations
+        loglike_proposal: array
+            likelihood for sampled points
+        loglike_target: array
+            likelihood of optimized point used for importance sampling
+        """
+        if self.res is None:
+            raise AssertionError('need to call optimize() first!')
+        mean = self.res
+        loglike_profile = self.loglike()
+        covariance = np.linalg.inv(self.XTKinvX)
+        samples_all = rng.multivariate_normal(mean, covariance, size=size)
+
+        rv = multivariate_normal(mean, covariance)
+
+        if self.positive:
+            mask = np.all(samples_all > 0, axis=1)
+            samples = samples_all[mask, :]
+        else:
+            samples = samples_all
+
+        y_preds = samples @ self.X.T
+        loglike_gauss_proposal = rv.logpdf(samples) - rv.logpdf(mean)
+        loglike_target = np.array([
+            self.gp.log_likelihood(self.flat_data - y_pred) for y_pred in y_preds]) + self.gp.log_prior()
         loglike_proposal = loglike_profile + loglike_gauss_proposal
 
         return samples, loglike_proposal, loglike_target

@@ -8,6 +8,7 @@ h5py
 numpy
 scipy
 matplotlib
+george
 scikit-learn
 flake8
 pycodestyle

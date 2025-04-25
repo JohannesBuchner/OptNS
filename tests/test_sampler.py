@@ -68,7 +68,7 @@ def test_trivial_OLS_linearparam_priors():
     measurement_sigma = 0.312
     y = np.array([data_mean])
     yerr = np.array([measurement_sigma])
-    
+
     # weighted sum of 42 +- 1 and 40 +- 1.0
     expected_mean = (data_mean * prior_sigma**2 + prior_mean * measurement_sigma**2) / (measurement_sigma**2 + prior_sigma**2)
     expected_std = ((measurement_sigma**-2 + prior_sigma**-2))**-0.5
@@ -76,7 +76,7 @@ def test_trivial_OLS_linearparam_priors():
     def linear_param_logprior(params):
         # 40 +- 2
         return -0.5 * ((params[:,0] - 40) / prior_sigma)**2
-    
+
     np.random.seed(431)
     statmodel = OptNS(
         linear_param_names0, nonlinear_param_names0, compute_model_components0,
@@ -208,7 +208,7 @@ def linear_param_logprior_loguniform(params):
     logp += np.where(params[:,0] > 0.01, 0, -np.inf)
     logp += np.where(params[:,1] > 0.01, 0, -np.inf)
     return logp
-    
+
 
 def test_nonlinear_gauss_vs_full_nestedsampling():
     # run OptNS
@@ -328,7 +328,7 @@ def test_nonlinear_poisson_vs_full_nestedsampling():
     corner.corner(refrun_samples, fig=fig, color='red', truths=[0, 0, 5], plot_datapoints=False, plot_density=False, )
     plt.savefig('test_poisson_corner.pdf')
     plt.close()
-    
+
     # check agreement
     assert_allclose(std, ref_std, rtol=0.05)
     assert_allclose(mean[0], ref_mean[0], atol=std[0] * 0.1)
@@ -414,4 +414,101 @@ def test_nonlinear_gauss_variable_error():
     assert (samples3[:,-1] > 0.1).mean() > 0.95, 'needed extra noise'
     assert (std3[:-1] > std).all()
     assert optresults['logz'] < optresults2['logz'] < optresults3['logz']
+
+
+
+def test_GP():
+    import george
+
+    def true_model(t, amp, location, log_sigma2):
+        return amp * np.exp(-0.5 * (t - location)**2 * np.exp(-log_sigma2))
+
+    np.random.seed(1234)
+
+    def generate_data(params, N, rng=(-5, 5)):
+        gp = george.GP(0.1 * george.kernels.ExpSquaredKernel(3.3))
+        t = rng[0] + np.diff(rng) * np.sort(np.random.rand(N))
+        y = gp.sample(t) + true_model(t, **params)
+        yerr = 0.05 + 0.05 * np.random.rand(N)
+        y += yerr * np.random.randn(N)
+        return t, y, yerr
+
+    truth = dict(amp=-1.0, location=0.1, log_sigma2=np.log(0.4))
+    t, y, yerr = generate_data(truth, 50)
+    tdata = t
+
+    plt.errorbar(t, y, yerr=yerr, fmt=".k", capsize=0)
+    plt.ylabel(r"$y$")
+    plt.xlabel(r"$t$")
+    plt.xlim(-5, 5)
+    plt.savefig('test_GP_data.pdf')
+    plt.close()
+
+
+    gp = george.GP(np.var(y) * george.kernels.Matern32Kernel(10.0))
+    gp.compute(t, yerr)
+    linear_param_names = ['C', 'amp']
+    nonlinear_param_names = ['location', 'lnvar'] + list(gp.get_parameter_names())
+    def compute_model_components(params):
+        # handle deterministic parameters
+        l, lnvar = params[:2]
+        X = np.transpose([1.0 + 0 * t, true_model(t, 1.0, l, lnvar)])
+        # the rest are GP parameters, which we update:
+        gp.set_parameter_vector(params[2:])
+        gp.compute(tdata, yerr)
+        return X
+    def nonlinear_param_transform(cube):
+        params = cube.copy()
+        params[0] = 20 * cube[0] - 10  # C
+        params[1] = 6 * cube[1] - 3    # amp
+        # GP parameter priors:
+        params[2:] = cube[2:] * 20 - 10
+        return params
+    def linear_param_logprior(params):
+        return 0
+
+    np.random.seed(123)
+    statmodel = OptNS(
+        linear_param_names, nonlinear_param_names, compute_model_components,
+        nonlinear_param_transform, linear_param_logprior,
+        y, gp=gp, positive=False)
+    optsampler = statmodel.ReactiveNestedSampler(log_dir='test_GP-run', resume='overwrite')
+    optresults = optsampler.run(**ultranest_run_kwargs)
+    optsampler.print_results()
+    optsampler.plot()
+    fullsamples, weights, y_preds = statmodel.get_weighted_samples(optresults['samples'], 100)
+    samples, y_pred_samples = statmodel.resample(fullsamples, weights, y_preds)
+
+    corner.corner(
+        samples,
+        titles=linear_param_names + nonlinear_param_names,
+        labels=linear_param_names + nonlinear_param_names,
+        show_titles=True, plot_datapoints=False, plot_density=False,
+        truths=[0, -1, 0.1, np.log(0.4), np.log(0.1), np.log(3.3)])
+    plt.savefig('test_GP_corner.pdf')
+    plt.close()
+
+    ax = plt.figure(figsize=(15, 6)).gca()
+    plt.errorbar(t, y, yerr=yerr, fmt=".k", capsize=0)
+    plt.ylabel(r"$y$")
+    plt.xlabel(r"$t$")
+    plt.xlim(-5, 5)
+    t = np.linspace(-5, 5, 500)
+    colors = ['orange', 'pink']
+    for i, (sample, y_pred_sample) in enumerate(zip(samples[:40], y_pred_samples[:40])):
+        norms = sample[:len(statmodel.linear_param_names)]
+        nonlinear_params = sample[len(statmodel.linear_param_names):]
+        X = statmodel.compute_model_components(nonlinear_params)
+        for j, norm in enumerate(norms):
+            if i == 0:
+                l, = ax.plot(t, norm * X[:,j], alpha=0.2, lw=0.5, label=statmodel.linear_param_names[j])
+                colors.append(l.get_color())
+            else:
+                l, = ax.plot(t, norm * X[:,j], alpha=0.2, lw=0.5, color=colors[j])
+        y_pred = norms @ X.T
+        plt.plot(t, y_pred + gp.sample_conditional(y - y_pred_sample, t), color="#4682b4", alpha=0.3, label='total' if i == 0 else None)
+    plt.legend()
+    plt.savefig('test_GP_ppc.pdf')
+    plt.close()
+
 
