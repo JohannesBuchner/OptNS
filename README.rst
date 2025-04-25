@@ -29,9 +29,11 @@ And data that are one of::
 
     y_obs ~ Normal(y, sigma)
     y_obs ~ Poisson(y)
+    y_obs ~ GP(y)
 
 y may be one or multi-dimensional.
 sigma may be different for each y (heteroscadastic).
+GP may be a Gaussian process from celerite or george.
 
 Here we see that each component y_i changes y linearly with its
 normalisation parameter A_i.
