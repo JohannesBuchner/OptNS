@@ -33,7 +33,108 @@ def unique_components(X, tol=1e-12):
     return mask
 
 
-def poisson_negloglike(lognorms, X, counts):
+class GaussianPrior:
+    """Gaussian prior probability function."""
+
+    def __init__(self, offset, cov):
+        """Initialise.
+
+        Parameters
+        ----------
+        offset: array
+            matrix of offsets between pairs of parameters
+        cov: array
+            matrix of covariance between pairs of parameters
+
+        Attributes
+        ----------
+        indicator: array|None
+            index array, one entry in each row should be -1, another 1.
+        offsets: array|None
+            mean offset of L == -1 and L == 1 entries
+        Sigma_inv: array|None
+            inverse covariance of L == -1 and L == 1 entries
+        """
+        n = cov.shape[0]
+        constraints = []
+        for i in range(n):
+            for j in range(i, n):
+                coeff = cov[i, j]
+                if coeff != 0:
+                    L_row = np.zeros(n)
+                    L_row[i] = 1
+                    L_row[j] = -1
+                    constraints.append((L_row, offset[i, j], coeff))
+
+        self.indicator = np.array([c[0] for c in constraints])
+        self.offsets = np.array([c[1] for c in constraints])
+        self.Sigma_inv = np.diag([1. / c[2] for c in constraints])
+
+    def neglogprob(self, lognorms):
+        """Compute negative log-probability.
+
+        Parameters
+        ----------
+        lognorms: array
+            logarithm of normalisations
+
+        Returns
+        -------
+        neglogprob: float
+            negative log-likelihood
+        """
+        delta = self.indicator @ lognorms - self.offsets
+        return -0.5 * delta @ self.Sigma_inv @ delta
+
+    def logprob_many(self, lognorms):
+        """Compute log-probability in a vectorized fashion.
+
+        Parameters
+        ----------
+        lognorms: array
+            2d array of logarithm of normalisations
+
+        Returns
+        -------
+        neglogprob: float
+            log-likelihood
+        """
+        delta = (self.indicator @ lognorms.T).T - self.offsets
+        return -0.5 * np.einsum('ni,ij,nj->n', delta, self.Sigma_inv, delta)
+
+    def grad(self, lognorms):
+        """Compute gradient of neglogprob.
+
+        Parameters
+        ----------
+        lognorms: array
+            2d array of logarithm of normalisations
+
+        Returns
+        -------
+        grad: array
+            vector of gradients
+        """
+        delta = self.indicator @ lognorms - self.offsets
+        return self.indicator.T @ self.Sigma_inv @ delta
+
+    def hessian(self, lognorms):
+        """Compute Hessian matrix of log-prob w.r.t. lognorms.
+
+        Parameters
+        ----------
+        lognorms: array
+            2d array of logarithm of normalisations
+
+        Returns
+        -------
+        hessian: array
+            Hessian matrix
+        """
+        return self.indicator.T @ self.Sigma_inv @ self.indicator
+
+
+def poisson_negloglike(lognorms, X, counts, gaussprior=None):
     """Compute negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -44,6 +145,8 @@ def poisson_negloglike(lognorms, X, counts):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
+    gaussprior: GaussPrior
+        Gaussian prior information
 
     Returns
     -------
@@ -52,10 +155,13 @@ def poisson_negloglike(lognorms, X, counts):
     """
     lam = exp(lognorms) @ X.T
     loglike = counts * log(lam) - lam
-    return -loglike.sum()
+    negloglike = -loglike.sum()
+    if gaussprior is not None:
+        negloglike += gaussprior.neglogprob(lognorms)
+    return negloglike
 
 
-def poisson_negloglike_grad(lognorms, X, counts):
+def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
     """Compute gradient of negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -66,6 +172,8 @@ def poisson_negloglike_grad(lognorms, X, counts):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
+    gaussprior: GaussPrior
+        Gaussian prior information
 
     Returns
     -------
@@ -76,10 +184,12 @@ def poisson_negloglike_grad(lognorms, X, counts):
     lam = norms @ X.T
     diff = 1 - counts / lam
     grad = (diff @ X) * norms
+    if gaussprior is not None:
+        grad += gaussprior.grad(lognorms)
     return grad
 
 
-def poisson_laplace_approximation(lognorms, X):
+def poisson_laplace_approximation(lognorms, X, gaussprior=None):
     """Compute mean and covariance corresponding to Poisson likelihood.
 
     Parameters
@@ -88,6 +198,8 @@ def poisson_laplace_approximation(lognorms, X):
         logarithm of normalisations
     X: array
         transposed list of the model component vectors.
+    gaussprior: GaussPrior
+        Gaussian prior information
 
     Returns
     -------
@@ -102,6 +214,8 @@ def poisson_laplace_approximation(lognorms, X):
     D = np.diag(1 / lambda_hat)
     # Compute the Fisher Information Matrix
     FIM = X.T @ D @ X
+    if gaussprior is not None:
+        FIM += gaussprior.hessian(lognorms)
     covariance = np.linalg.inv(FIM)
     return mean, covariance
 
@@ -219,7 +333,7 @@ def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
 class PoissonModel:
     """Additive model components with Poisson measurements."""
 
-    def __init__(self, flat_data, positive=True, eps_model=0.1, eps_data=0.1):
+    def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, gaussprior=None):
         """Initialise model for Poisson data with additive model components.
 
         Parameters
@@ -232,9 +346,12 @@ class PoissonModel:
             For heuristic initial guess of normalisations, small number to add to model component shapes.
         eps_data: float
             For heuristic initial guess of normalisations, small number to add to counts.
+        gaussprior: GaussPrior
+            Gaussian prior information
         """
         if not np.all(flat_data.astype(int) == flat_data) or not np.all(flat_data >= 0):
             raise AssertionError("Data are not counts, cannot use Poisson likelihood")
+        self.Ncomponents = Ncomponents
         self.positive = positive
         self.guess_data_offset = eps_data
         self.guess_model_offset = eps_model
@@ -243,6 +360,7 @@ class PoissonModel:
         self.flat_data = flat_data
         self.flat_invvar = None
         self.res = None
+        self.gaussprior = gaussprior
 
     def update_components(self, component_shapes):
         """Set the model components.
@@ -253,6 +371,7 @@ class PoissonModel:
             transposed list of the model component vectors.
         """
         self.mask_unique = unique_components(component_shapes)
+        assert component_shapes.shape == (self.Ndata, self.Ncomponents)
         X = component_shapes
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")
@@ -278,7 +397,7 @@ class PoissonModel:
         float
             Negative log-likelihood
         """
-        return poisson_negloglike(lognorms, self.X, self.flat_data)
+        return poisson_negloglike(lognorms, self.X, self.flat_data, self.gaussprior)
 
     def negloglike_grad(self, lognorms):
         """Compute negative log-likelihood.
@@ -293,7 +412,7 @@ class PoissonModel:
         float
             Gradient of the negative log-likelihood w.r.t. lognorms.
         """
-        return poisson_negloglike_grad(lognorms, self.X, self.flat_data)
+        return poisson_negloglike_grad(lognorms, self.X, self.flat_data, self.gaussprior)
 
     def _optimize(self):
         """Optimize the normalisations."""
@@ -306,7 +425,7 @@ class PoissonModel:
         # x0_rigorous = poisson_initial_guess(X[:,mask_unique], y, 0.1, 1e-50)
         assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
-            poisson_negloglike, x0, args=(X[:,mask_unique], y),
+            poisson_negloglike, x0, args=(X[:,mask_unique], y, self.gaussprior),
             jac=poisson_negloglike_grad,
             **self.minimize_kwargs)
         xfull = np.zeros(len(mask_unique)) + -1e50
@@ -353,7 +472,7 @@ class PoissonModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        return poisson_laplace_approximation(self.res.x, self.X)
+        return poisson_laplace_approximation(self.res.x, self.X, self.gaussprior)
 
     def sample(self, size, rng=np.random):
         """Sample from Laplace approximation to likelihood function.
@@ -398,20 +517,19 @@ class PoissonModel:
         assert np.isfinite(loglike_gauss_proposal).all(), (
             samples[~np.isfinite(loglike_gauss_proposal),:], loglike_gauss_proposal[~np.isfinite(loglike_gauss_proposal)])
         loglike_proposal = loglike_gauss_proposal + profile_loglike
-        # print('gauss-poisson importance sampling:', loglike_gauss_proposal, profile_loglike)
         assert np.isfinite(loglike_proposal).all(), (samples, loglike_proposal, loglike_gauss_proposal)
         lam = samples @ X.T
-        # print('resampling:', lam.shape)
         # target probability function: Poisson
         loglike_target = np.sum(counts * log(lam) - lam, axis=1)
-        # print('full target:', loglike_target, loglike_target - profile_loglike)
+        if self.gaussprior is not None:
+            loglike_target += self.gaussprior.logprob_many(np.log(samples))
         return samples, loglike_proposal, loglike_target
 
 
 class GaussModel:
     """Additive model components with Gaussian measurements."""
 
-    def __init__(self, flat_data, flat_invvar, positive, cond_threshold=1e6):
+    def __init__(self, Ncomponents, flat_data, flat_invvar, positive, cond_threshold=1e6):
         """Initialise model for Gaussian data with additive model components.
 
         Parameters
@@ -427,6 +545,7 @@ class GaussModel:
         """
         if not np.isfinite(flat_data).all():
             raise AssertionError("Invalid data, not finite numbers.")
+        self.Ncomponents = Ncomponents
         self.Ndata, = flat_data.shape
         assert (self.Ndata,) == flat_invvar.shape, (self.Ndata, flat_invvar.shape)
         self.positive = positive
@@ -461,6 +580,7 @@ class GaussModel:
         """
         assert component_shapes.ndim == 2
         X = component_shapes
+        assert component_shapes.shape == (self.Ndata, self.Ncomponents)
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")
         if not np.any(np.abs(X) > 0, axis=1).all():
@@ -582,7 +702,7 @@ class GaussModel:
 class GPModel:
     """Additive model components with Gaussian Process correlated measurements."""
 
-    def __init__(self, flat_data, gp, positive, cond_threshold=1e6):
+    def __init__(self,Ncomponents, flat_data, gp, positive, cond_threshold=1e6):
         """Initialise model for Gaussian data with additive model components.
 
         Parameters
@@ -598,6 +718,7 @@ class GPModel:
         """
         if not np.isfinite(flat_data).all():
             raise AssertionError("Invalid data, not finite numbers.")
+        self.Ncomponents = Ncomponents
         self.Ndata, = flat_data.shape
         self.positive = positive
         self.cond_threshold = cond_threshold
@@ -615,6 +736,7 @@ class GPModel:
         """
         assert component_shapes.ndim == 2
         X = component_shapes
+        assert component_shapes.shape == (self.Ndata, self.Ncomponents)
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")
         if not np.any(np.abs(X) > 0, axis=1).all():
@@ -746,6 +868,6 @@ def ComponentModel(Ncomponents, flat_data, flat_invvar=None, positive=True, **kw
         `PoissonModel` if flat_invvar is None or otherwise `GaussModel`
     """
     if flat_invvar is None:
-        return PoissonModel(flat_data, positive=positive, **kwargs)
+        return PoissonModel(Ncomponents, flat_data, positive=positive, **kwargs)
     else:
-        return GaussModel(flat_data, flat_invvar, positive=positive, **kwargs)
+        return GaussModel(Ncomponents, flat_data, flat_invvar, positive=positive, **kwargs)

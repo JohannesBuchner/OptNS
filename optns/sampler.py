@@ -79,7 +79,7 @@ class OptNS:
         self.compute_model_components = compute_model_components
         self.compute_invvar = compute_invvar
         if gp is not None:
-            self.statmodel = GPModel(flat_data, gp=gp, positive=positive)
+            self.statmodel = GPModel(Ncomponents, flat_data, gp=gp, positive=positive)
         else:
             self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar, positive=positive)
 

@@ -128,7 +128,7 @@ expected_res_OLS_cov = np.array([[ 3.45454545e-03, -4.90909091e-04], [-4.9090909
 assert ((expected_res_OLS_mean - 1) / np.diag(expected_res_OLS_cov)**0.5 < 1.0).all()
 
 def test_test_expectations():
-    gm = GaussModel(data_linear, noise**-2, positive=False)
+    gm = GaussModel(2, data_linear, noise**-2, positive=False)
     gm.update_components(X)
     assert_allclose(expected_res_OLS_mean, LinearRegression(fit_intercept=False).fit(X, data_linear).coef_)
     assert_allclose(expected_res_OLS_mean, gm.norms())
