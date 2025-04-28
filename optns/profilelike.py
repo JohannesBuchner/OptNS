@@ -1,7 +1,7 @@
 """Profile likelihoods."""
+import jax
 import numpy as np
 from numpy import exp, log
-import jax
 from scipy.optimize import minimize
 from scipy.stats import multivariate_normal, norm
 
