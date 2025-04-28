@@ -1,6 +1,7 @@
 """Profile likelihoods."""
 import numpy as np
 from numpy import exp, log
+import jax
 from scipy.optimize import minimize
 from scipy.stats import multivariate_normal, norm
 
@@ -134,6 +135,7 @@ class GaussianPrior:
         return self.indicator.T @ self.Sigma_inv @ self.indicator
 
 
+@jax.jit
 def poisson_negloglike(lognorms, X, counts, gaussprior=None):
     """Compute negative log-likelihood of a Poisson distribution.
 
@@ -153,14 +155,15 @@ def poisson_negloglike(lognorms, X, counts, gaussprior=None):
     negloglike: float
         negative log-likelihood, neglecting the `1/fac(counts)` constant.
     """
-    lam = exp(lognorms) @ X.T
-    loglike = counts * log(lam) - lam
+    lam = jax.numpy.exp(lognorms) @ X.T
+    loglike = counts * jax.numpy.log(lam) - lam
     negloglike = -loglike.sum()
     if gaussprior is not None:
         negloglike += gaussprior.neglogprob(lognorms)
     return negloglike
 
 
+@jax.jit
 def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
     """Compute gradient of negative log-likelihood of a Poisson distribution.
 
@@ -180,7 +183,7 @@ def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
     grad: array
         vector of gradients
     """
-    norms = np.exp(lognorms)
+    norms = jax.numpy.exp(lognorms)
     lam = norms @ X.T
     diff = 1 - counts / lam
     grad = (diff @ X) * norms
