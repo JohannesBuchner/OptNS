@@ -334,3 +334,24 @@ def test_gauss_components_identical():
     assert statmodel.cond > 1e6
     assert statmodel.norms()[2] == 0
 
+
+def test_gaussian_prior():
+    means = [[1.23, 2.34], [3.45, 4.56]]
+    covs = [[1, 0], [0.01, 0]]
+    gauss = GaussianPrior(means, covs)
+    logpdfa = scipy.stats.norm(1.23, 1).logpdf(2.0)
+    logpdfb = scipy.stats.norm(4.56, 0.1).logpdf(4.0)
+    logpdf = -gauss.neglogprob([2.0, 4.0])
+    assert_allclose(logpdf, logpdfa + logpdfb)
+    assert_allclose(logpdf, -gauss.neglogprob_many(np.array([[2.0, 4.0]]))[0])
+
+    means = np.diag([1.23, 4.56])
+    covs = np.array([[1, 0.02], [0.1, 0.02]])
+    rv = scipy.stats.multivariate_normal(means, covs)
+    samples = np.random.multivariate_normal(means, covs, size=100)
+    logpdfs = rv.logpdf(samples)
+    assert_allclose(logpdf, -gauss.logprob_many(samples))
+    
+    
+    assert_allclose([0, 0], gauss.grad(np.diag(means)))
+    assert_allclose([[0, 0], [0, 0]], gauss.hessian(np.diag(means)))

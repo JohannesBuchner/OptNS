@@ -5,6 +5,8 @@ from numpy import exp, log
 from scipy.optimize import minimize
 from scipy.stats import multivariate_normal, norm
 
+jax.config.update("jax_enable_x64", True)
+
 
 def unique_components(X, tol=1e-12):
     """Identify components.
@@ -274,38 +276,6 @@ def gauss_importance_sample_stable(mean, covariance, size, rng):
     return samples_all, rv_logpdf
 
 
-def poisson_initial_guess(X, counts, epsilon=0.1, minnorm=1e-50):
-    """Guess component normalizations from counts.
-
-    Based on weighted least squares, with zero counts adjusted.
-
-    Parameters
-    ----------
-    X: array
-        transposed list of the model component vectors.
-    counts: array
-        non-negative integers giving the observed counts.
-    epsilon: float
-        small number to add to counts to avoid zeros.
-    minnorm: float
-        smallest allowed normalisation
-
-    Returns
-    -------
-    lognorms: array
-        logarithm of normalisations
-    """
-    y = counts + epsilon
-    W = np.diag(1.0 / y)
-    # Weighted least squares: N = (X^T W X)^(-1) X^T W y
-    XtW = X.T @ W
-    A = XtW @ X
-    b = XtW @ y
-    # least-squares solve
-    N0 = np.linalg.lstsq(A, b, rcond=None)[0]
-    return np.log(np.clip(N0, 0, None) + minnorm)
-
-
 def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
     """Guess component normalizations from counts.
 
@@ -386,36 +356,6 @@ class PoissonModel:
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         self.X = X
         self._optimize()
-
-    def negloglike(self, lognorms):
-        """Compute negative log-likelihood.
-
-        Parameters
-        ----------
-        lognorms: array
-            logarithm of normalisations
-
-        Returns
-        -------
-        float
-            Negative log-likelihood
-        """
-        return poisson_negloglike(lognorms, self.X, self.flat_data, self.gaussprior)
-
-    def negloglike_grad(self, lognorms):
-        """Compute negative log-likelihood.
-
-        Parameters
-        ----------
-        lognorms: array
-            logarithm of normalisations
-
-        Returns
-        -------
-        float
-            Gradient of the negative log-likelihood w.r.t. lognorms.
-        """
-        return poisson_negloglike_grad(lognorms, self.X, self.flat_data, self.gaussprior)
 
     def _optimize(self):
         """Optimize the normalisations."""
