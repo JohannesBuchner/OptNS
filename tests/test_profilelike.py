@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.stats import poisson
 from sklearn.linear_model import LinearRegression
-from optns.profilelike import poisson_negloglike, ComponentModel
+from optns.profilelike import poisson_negloglike, ComponentModel, GaussianPrior
+import scipy.stats
 from scipy.special import factorial
 from numpy.testing import assert_allclose
 
@@ -336,22 +337,34 @@ def test_gauss_components_identical():
 
 
 def test_gaussian_prior():
-    means = [[1.23, 2.34], [3.45, 4.56]]
-    covs = [[1, 0], [0.01, 0]]
+    means = np.array([1.23, 4.56])
+    covs = np.array([[1, 0], [0, 0.01]])
     gauss = GaussianPrior(means, covs)
-    logpdfa = scipy.stats.norm(1.23, 1).logpdf(2.0)
-    logpdfb = scipy.stats.norm(4.56, 0.1).logpdf(4.0)
+    rva = scipy.stats.norm(1.23, 1)
+    rvb = scipy.stats.norm(4.56, 0.1)
+    logpdfa = rva.logpdf(2.0)
+    logpdfb = rvb.logpdf(4.0)
     logpdf = -gauss.neglogprob([2.0, 4.0])
+    print(logpdfa, logpdfb, logpdf)
     assert_allclose(logpdf, logpdfa + logpdfb)
-    assert_allclose(logpdf, -gauss.neglogprob_many(np.array([[2.0, 4.0]]))[0])
+    assert_allclose(logpdf, gauss.logprob_many(np.array([[2.0, 4.0]]))[0])
 
-    means = np.diag([1.23, 4.56])
-    covs = np.array([[1, 0.02], [0.1, 0.02]])
+def test_gaussian_prior2():
+    means = np.array([1.23, 4.56])
+    covs = np.array([[1, 0.02], [0.02, 0.1]])
+    #covs = np.array([[1, 0.0], [0.0, 0.1]])
+    gauss = GaussianPrior(means, covs)
     rv = scipy.stats.multivariate_normal(means, covs)
     samples = np.random.multivariate_normal(means, covs, size=100)
+    for sample in samples:
+        print('sample:', sample)
+        assert_allclose(rv.logpdf(sample), -gauss.neglogprob(sample))
     logpdfs = rv.logpdf(samples)
-    assert_allclose(logpdf, -gauss.logprob_many(samples))
+    assert_allclose(logpdfs, gauss.logprob_many(samples))
     
-    
-    assert_allclose([0, 0], gauss.grad(np.diag(means)))
-    assert_allclose([[0, 0], [0, 0]], gauss.hessian(np.diag(means)))
+    assert_allclose([0, 0], gauss.grad(means))
+    invcov = np.linalg.inv(covs)
+    assert_allclose(invcov, gauss.hessian(means))
+    for sample in samples[:3]:
+        assert_allclose(gauss.grad(sample), invcov @ (sample - means))
+        assert_allclose(gauss.hessian(sample), invcov)

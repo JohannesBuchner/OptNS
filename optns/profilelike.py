@@ -39,12 +39,12 @@ def unique_components(X, tol=1e-12):
 class GaussianPrior:
     """Gaussian prior probability function."""
 
-    def __init__(self, offset, cov):
+    def __init__(self, means, cov):
         """Initialise.
 
         Parameters
         ----------
-        offset: array
+        means: array
             matrix of offsets between pairs of parameters
         cov: array
             matrix of covariance between pairs of parameters
@@ -58,20 +58,11 @@ class GaussianPrior:
         Sigma_inv: array|None
             inverse covariance of L == -1 and L == 1 entries
         """
-        n = cov.shape[0]
-        constraints = []
-        for i in range(n):
-            for j in range(i, n):
-                coeff = cov[i, j]
-                if coeff != 0:
-                    L_row = np.zeros(n)
-                    L_row[i] = 1
-                    L_row[j] = -1
-                    constraints.append((L_row, offset[i, j], coeff))
-
-        self.indicator = np.array([c[0] for c in constraints])
-        self.offsets = np.array([c[1] for c in constraints])
-        self.Sigma_inv = np.diag([1. / c[2] for c in constraints])
+        ndim, = means.shape
+        assert (ndim, ndim) == cov.shape
+        self.mean = means
+        self.cov_inv = np.linalg.inv(cov)
+        self.norm_const = 0.5 * np.log(np.linalg.det(2 * np.pi * cov))
 
     def neglogprob(self, lognorms):
         """Compute negative log-probability.
@@ -86,8 +77,8 @@ class GaussianPrior:
         neglogprob: float
             negative log-likelihood
         """
-        delta = self.indicator @ lognorms - self.offsets
-        return -0.5 * delta @ self.Sigma_inv @ delta
+        delta = lognorms - self.mean
+        return 0.5 * delta @ self.cov_inv @ delta + self.norm_const
 
     def logprob_many(self, lognorms):
         """Compute log-probability in a vectorized fashion.
@@ -102,8 +93,8 @@ class GaussianPrior:
         neglogprob: float
             log-likelihood
         """
-        delta = (self.indicator @ lognorms.T).T - self.offsets
-        return -0.5 * np.einsum('ni,ij,nj->n', delta, self.Sigma_inv, delta)
+        delta = lognorms - self.mean.reshape((1, -1))
+        return -0.5 * np.einsum('ni,ij,nj->n', delta, self.cov_inv, delta) - self.norm_const
 
     def grad(self, lognorms):
         """Compute gradient of neglogprob.
@@ -118,8 +109,8 @@ class GaussianPrior:
         grad: array
             vector of gradients
         """
-        delta = self.indicator @ lognorms - self.offsets
-        return self.indicator.T @ self.Sigma_inv @ delta
+        delta = lognorms - self.mean
+        return self.cov_inv @ delta
 
     def hessian(self, lognorms):
         """Compute Hessian matrix of log-prob w.r.t. lognorms.
@@ -134,7 +125,7 @@ class GaussianPrior:
         hessian: array
             Hessian matrix
         """
-        return self.indicator.T @ self.Sigma_inv @ self.indicator
+        return self.cov_inv
 
 
 @jax.jit
