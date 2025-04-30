@@ -185,7 +185,39 @@ def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
     return grad
 
 
-def poisson_laplace_approximation(lognorms, X, gaussprior=None):
+@jax.jit
+def poisson_negloglike_hessian(lognorms, X, counts, gaussprior=None):
+    """Compute Hessian of negative log-likelihood of a Poisson distribution.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    gaussprior: GaussPrior
+        Gaussian prior information
+
+    Returns
+    -------
+    grad: array
+        vector of gradients
+    """
+    norms = jax.numpy.exp(lognorms)
+    lam = norms @ X.T
+    W = (lam - counts) / (lam**2)
+
+    H = (X.T * W[None, :]) @ X
+    H *= norms[:, None] * norms[None, :]
+    assert H.shape == (len(lognorms), len(lognorms))
+    if gaussprior is not None:
+        H += gaussprior.hessian(lognorms)
+    return H
+
+
+def poisson_laplace_approximation(lognorms, X, counts, gaussprior=None, eps=1e-6):
     """Compute mean and covariance corresponding to Poisson likelihood.
 
     Parameters
@@ -194,8 +226,12 @@ def poisson_laplace_approximation(lognorms, X, gaussprior=None):
         logarithm of normalisations
     X: array
         transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
     gaussprior: GaussPrior
         Gaussian prior information
+    eps: float
+        small number to add to hessian before inverting it
 
     Returns
     -------
@@ -203,7 +239,7 @@ def poisson_laplace_approximation(lognorms, X, gaussprior=None):
         peak of the log-likelihood, exp(lognorms)
     cov: array
         covariance of the Gaussian approximation to the log-likelihood,
-        from the inverse Fisher matrix.
+        from the inverse Hessian matrix.
     """
     mean = exp(lognorms)
     lambda_hat = mean @ X.T
@@ -213,6 +249,11 @@ def poisson_laplace_approximation(lognorms, X, gaussprior=None):
     if gaussprior is not None:
         FIM += gaussprior.hessian(lognorms)
     covariance = np.linalg.inv(FIM)
+    """
+    mean = jax.numpy.exp(lognorms)
+    hessian = poisson_negloglike_hessian(lognorms, X, counts, gaussprior)
+    covariance = np.linalg.inv(hessian + eps * np.eye(len(hessian)))
+    """
     return mean, covariance
 
 
@@ -302,6 +343,8 @@ class PoissonModel:
 
         Parameters
         ----------
+        Ncomponents: int
+            number of model shape components
         flat_data: array
             Observed counts (non-negative integer numbers)
         positive: bool
@@ -361,6 +404,7 @@ class PoissonModel:
         res = minimize(
             poisson_negloglike, x0, args=(X[:,mask_unique], y, self.gaussprior),
             jac=poisson_negloglike_grad,
+            hess=poisson_negloglike_hessian,
             **self.minimize_kwargs)
         xfull = np.zeros(len(mask_unique)) + -1e50
         xfull[mask_unique] = res.x
@@ -406,7 +450,7 @@ class PoissonModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        return poisson_laplace_approximation(self.res.x, self.X, self.gaussprior)
+        return poisson_laplace_approximation(self.res.x, self.X, self.flat_data, self.gaussprior)
 
     def sample(self, size, rng=np.random):
         """Sample from Laplace approximation to likelihood function.
@@ -468,6 +512,8 @@ class GaussModel:
 
         Parameters
         ----------
+        Ncomponents: int
+            number of model shape components
         flat_data: array
             Measurement errors (non-negative integer numbers)
         flat_invvar: array
@@ -636,11 +682,13 @@ class GaussModel:
 class GPModel:
     """Additive model components with Gaussian Process correlated measurements."""
 
-    def __init__(self,Ncomponents, flat_data, gp, positive, cond_threshold=1e6):
+    def __init__(self, Ncomponents, flat_data, gp, positive, cond_threshold=1e6):
         """Initialise model for Gaussian data with additive model components.
 
         Parameters
         ----------
+        Ncomponents: int
+            number of model shape components
         flat_data: array
             Measurement errors (non-negative integer numbers)
         gp: object
@@ -670,7 +718,7 @@ class GPModel:
         """
         assert component_shapes.ndim == 2
         X = component_shapes
-        assert component_shapes.shape == (self.Ndata, self.Ncomponents)
+        assert component_shapes.shape == (self.Ndata, self.Ncomponents), (component_shapes.shape, (self.Ndata, self.Ncomponents))
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")
         if not np.any(np.abs(X) > 0, axis=1).all():

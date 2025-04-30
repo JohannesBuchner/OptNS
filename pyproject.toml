@@ -9,7 +9,7 @@ version = "2.0.0"
 description = "Optimized Nested Sampling: fast inference for non-linear additive models"
 readme = "README.rst"
 requires-python = ">=3.8"
-dependencies = ["numpy", "scipy", "tqdm", "ultranest", "corner", "matplotlib"]
+dependencies = ["numpy", "scipy", "tqdm", "jax", "ultranest", "corner", "matplotlib"]
 license = {file = "LICENSE"}
 authors = [
     { name = "Johannes Buchner", email = "johannes.buchner.acad@gmx.com" },

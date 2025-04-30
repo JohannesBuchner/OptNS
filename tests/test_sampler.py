@@ -289,6 +289,13 @@ def test_nonlinear_poisson_vs_full_nestedsampling():
         ['A', 'B'], ['tau'], compute_model_components_nonlinear,
         nonlinear_param_transform, linear_param_logprior_loguniform,
         data_nonlinear_poisson)
+
+    ax = plt.figure(figsize=(15, 6)).gca()
+    statmodel.prior_predictive_check_plot(ax)
+    plt.legend()
+    plt.savefig('test_poisson_priorpc.pdf')
+    plt.close()
+
     optsampler = statmodel.ReactiveNestedSampler()
     optresults = optsampler.run(**ultranest_run_kwargs)
     print(optresults['ncall'])
@@ -468,10 +475,28 @@ def test_GP():
         return 0
 
     np.random.seed(123)
+
     statmodel = OptNS(
         linear_param_names, nonlinear_param_names, compute_model_components,
         nonlinear_param_transform, linear_param_logprior,
         y, gp=gp, positive=False)
+
+    for i in range(10):
+        nonlinear_params = nonlinear_param_transform(np.random.uniform(size=len(nonlinear_param_names)))
+        X = compute_model_components(nonlinear_params)
+        statmodel.statmodel.update_components(X)
+        norms = statmodel.statmodel.norms()
+        print(nonlinear_params, statmodel.statmodel.cond)
+        compute_model_components(nonlinear_params)
+        statmodel.statmodel.update_components(X)
+        assert_allclose(statmodel.statmodel.norms(), norms)
+        
+        nonlinear_params2 = nonlinear_param_transform(np.random.uniform(size=len(nonlinear_param_names)))
+        compute_model_components(nonlinear_params2)
+        compute_model_components(nonlinear_params)
+        statmodel.statmodel.update_components(X)
+        assert_allclose(statmodel.statmodel.norms(), norms)
+
     optsampler = statmodel.ReactiveNestedSampler(log_dir='test_GP-run', resume='overwrite')
     optresults = optsampler.run(**ultranest_run_kwargs)
     optsampler.print_results()

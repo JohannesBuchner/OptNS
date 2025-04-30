@@ -4,11 +4,25 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.stats import poisson
 from sklearn.linear_model import LinearRegression
-from optns.profilelike import poisson_negloglike, ComponentModel, GaussianPrior
+from optns.profilelike import poisson_negloglike, poisson_negloglike_grad, poisson_negloglike_hessian, ComponentModel, GaussianPrior, gauss_importance_sample_stable
 import scipy.stats
 from scipy.special import factorial
 from numpy.testing import assert_allclose
 
+def test_gauss_importance_sample_stable_fallback():
+    rng = np.random.RandomState(seed=42)
+    mean = np.array([0.0, 0.0])
+    # Singular covariance matrix (not full rank)
+    covariance = np.array([[1.0, 1.0],
+                           [1.0, 1.0]])
+    samples, logpdf = gauss_importance_sample_stable(
+        mean, covariance, size=5, rng=rng)
+    assert samples.shape == (5, 2)
+    # Check that logpdf runs and returns array of correct length
+    test_input = np.array([[0.0, 0.0], [1.0, 1.0]])
+    log_probs = logpdf(test_input)
+    assert log_probs.shape == (2,)
+    assert np.all(np.isfinite(log_probs))
 
 def test_poisson_negloglike_lowcount():
     counts = np.array([0, 1, 2, 3])
@@ -39,6 +53,26 @@ def test_poisson_negloglike_highcount():
     
     assert logl3 > logl2
 
+def test_poisson_negloglike_grad_highcount():
+    counts = np.array([10000])
+    X = np.ones((1, 1))
+    logl = -poisson_negloglike(np.log([10000]), X, counts)
+    logl1 = -poisson_negloglike(np.log([11000]), X, counts)
+    logl2 = -poisson_negloglike(np.log([9000]), X, counts)
+    assert logl > logl1
+    assert logl > logl2
+    grad1 = -poisson_negloglike_grad(np.log([11000]), X, counts)
+    print(grad1)
+    assert grad1 < 0
+    grad2 = -poisson_negloglike_grad(np.log([9000]), X, counts)
+    print(grad2)
+    assert grad2 > 0
+    hess = poisson_negloglike_hessian(np.log([10000]), X, counts)
+    print(hess)
+    hess1 = poisson_negloglike_hessian(np.log([11000]), X, counts)
+    print(hess1)
+    hess2 = poisson_negloglike_hessian(np.log([9000]), X, counts)
+    print(hess2)
 
 def test_gauss():
     x = np.linspace(0, 10, 400)
