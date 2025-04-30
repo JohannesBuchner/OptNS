@@ -3,5 +3,6 @@ scipy
 matplotlib
 scikit-learn
 tqdm
+jax
 ultranest
 h5py

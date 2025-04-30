@@ -8,6 +8,7 @@ h5py
 numpy
 scipy
 matplotlib
+jax
 george
 scikit-learn
 flake8

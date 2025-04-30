@@ -15,7 +15,7 @@ with open('HISTORY.rst', encoding="utf-8") as history_file:
     history = re.sub(r':py:class:`([^`]+)`', r'\1',
         history_file.read())
 
-requirements = ['numpy', 'scipy', 'matplotlib', 'tqdm', 'ultranest']
+requirements = ['numpy', 'scipy', 'matplotlib', 'jax', 'tqdm', 'ultranest']
 
 setup_requirements = ['pytest-runner', ]
 
