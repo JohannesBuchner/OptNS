@@ -3,7 +3,7 @@ import numpy as np
 import tqdm
 from ultranest import ReactiveNestedSampler
 
-from .profilelike import ComponentModel, GPModel
+from .profilelike import GaussModel, GPModel, PoissonModel
 
 
 def ess(w):
@@ -42,6 +42,7 @@ class OptNS:
         positive=True,
         compute_invvar=None,
         gp=None,
+        **kwargs
     ):
         """Initialise.
 
@@ -79,9 +80,11 @@ class OptNS:
         self.compute_model_components = compute_model_components
         self.compute_invvar = compute_invvar
         if gp is not None:
-            self.statmodel = GPModel(Ncomponents, flat_data, gp=gp, positive=positive)
+            self.statmodel = GPModel(Ncomponents, flat_data, gp=gp, positive=positive, **kwargs)
+        elif flat_invvar is None:
+            self.statmodel = PoissonModel(Ncomponents, flat_data, positive=positive, **kwargs)
         else:
-            self.statmodel = ComponentModel(Ncomponents, flat_data, flat_invvar, positive=positive)
+            self.statmodel = GaussModel(Ncomponents, flat_data, flat_invvar, positive=positive, **kwargs)
 
     def prior_predictive_check_plot(self, ax, size=20):
         """Create prior predictive check visualisation.

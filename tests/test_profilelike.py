@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.stats import poisson
 from sklearn.linear_model import LinearRegression
-from optns.profilelike import poisson_negloglike, poisson_negloglike_grad, poisson_negloglike_hessian, ComponentModel, GaussianPrior, gauss_importance_sample_stable
+from optns.profilelike import poisson_negloglike, poisson_negloglike_grad, poisson_negloglike_hessian, GaussModel, PoissonModel, GaussianPrior, gauss_importance_sample_stable
 import scipy.stats
 from scipy.special import factorial
 from numpy.testing import assert_allclose
@@ -88,7 +88,7 @@ def test_gauss():
     X = np.transpose([A, B, C])
     y = data
     sample_weight = noise**-2
-    statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
+    statmodel = GaussModel(3, data, flat_invvar=sample_weight, positive=False)
     statmodel.update_components(X)
     logl = statmodel.loglike()
     norms_inferred = statmodel.norms()
@@ -127,7 +127,18 @@ def test_trivial_OLS():
     y = np.array([42.0])
     yerr = np.array([1.0])
     X = np.transpose([[1.]])
-    statmodel = ComponentModel(1, y, flat_invvar=yerr**-2)
+    statmodel = GaussModel(1, y, flat_invvar=yerr**-2, positive=False)
+    statmodel.update_components(X)
+    chi2 = statmodel.chi2()
+    assert chi2 == 0
+    norms_inferred = statmodel.norms()
+    assert norms_inferred == 42.0
+
+def test_trivial_OLS_positive():
+    y = np.array([42.0])
+    yerr = np.array([1.0])
+    X = np.transpose([[1.]])
+    statmodel = GaussModel(1, y, flat_invvar=yerr**-2, positive=True)
     statmodel.update_components(X)
     chi2 = statmodel.chi2()
     assert chi2 == 0
@@ -142,7 +153,7 @@ def test_poisson_verylowcount():
     X = np.transpose([A])
     for ncounts in 0, 1, 2, 3, 4, 5, 10, 20, 40, 100:
         data = np.array([ncounts])
-        statmodel = ComponentModel(1, data)
+        statmodel = PoissonModel(1, data)
         statmodel.update_components(X)
         samples, loglike_proposal, loglike_target = statmodel.sample(1000000, rng)
         assert np.all(samples > 0)
@@ -184,7 +195,7 @@ def test_poisson_lowcount():
     res = minimize(minfunc, x0, method='Nelder-Mead', options=dict(fatol=1e-10, maxfev=10000))
     norms_expected = np.exp(res.x)
 
-    statmodel = ComponentModel(3, data)
+    statmodel = PoissonModel(3, data)
     statmodel.update_components(X)
     logl = statmodel.loglike()
     logl_expected = -poisson_negloglike(res.x, X, data)
@@ -240,7 +251,7 @@ def test_poisson_highcount():
     res = minimize(minfunc, x0, method='Nelder-Mead', options=dict(fatol=1e-10, maxfev=10000))
     norms_expected = np.exp(res.x)
 
-    statmodel = ComponentModel(3, data)
+    statmodel = PoissonModel(3, data)
     statmodel.update_components(X)
     logl = statmodel.loglike()
     logl_expected = -poisson_negloglike(res.x, X, data)
@@ -289,7 +300,7 @@ def test_poisson_loglike():
             rng = np.random.RandomState(Ndata)
             data = rng.poisson(model)
             if data.sum() == 0: continue
-            statmodel = ComponentModel(3, data)
+            statmodel = PoissonModel(3, data)
             statmodel.update_components(X)
             norms_inferred = statmodel.norms()
             assert np.isfinite(norms_inferred).all(), norms_inferred
@@ -307,7 +318,7 @@ def test_poisson_component_somezero():
     rng = np.random.RandomState(Ndata)
     data = rng.poisson(model)
     assert data.sum() > 0
-    statmodel = ComponentModel(3, data)
+    statmodel = PoissonModel(3, data)
     statmodel.update_components(X)
     norms_inferred = statmodel.norms()
     assert np.isfinite(norms_inferred).all(), norms_inferred
@@ -325,7 +336,7 @@ def test_poisson_component_zero():
     rng = np.random.RandomState(Ndata)
     data = rng.poisson(model)
     assert data.sum() > 0
-    statmodel = ComponentModel(3, data)
+    statmodel = PoissonModel(3, data)
     try:
         statmodel.update_components(X)
         raise Exception()
@@ -344,7 +355,7 @@ def test_poisson_components_identical():
     rng = np.random.RandomState(Ndata)
     data = rng.poisson(model)
     assert data.sum() > 0
-    statmodel = ComponentModel(3, data)
+    statmodel = PoissonModel(3, data)
     statmodel.update_components(X)
     assert statmodel.norms()[2] == 0
     logl = statmodel.loglike()
@@ -362,12 +373,14 @@ def test_gauss_components_identical():
     rng = np.random.RandomState(42)
     data = rng.normal(model, noise)
 
-    X = np.transpose([A, B, C])
-    sample_weight = noise**-2
-    statmodel = ComponentModel(3, data, flat_invvar=sample_weight)
-    statmodel.update_components(X)
-    assert statmodel.cond > 1e6
-    assert statmodel.norms()[2] == 0
+    for positive in False, True:
+        print(positive)
+        X = np.transpose([A, B, C])
+        sample_weight = noise**-2
+        statmodel = GaussModel(3, data, flat_invvar=sample_weight, positive=positive)
+        statmodel.update_components(X)
+        assert statmodel.cond > 1e6
+        assert statmodel.norms()[2] == 0
 
 
 def test_gaussian_prior():

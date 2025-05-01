@@ -336,7 +336,13 @@ def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
 
 
 class PoissonModel:
-    """Additive model components with Poisson measurements."""
+    """Generalized Additive Model with Poisson measurements.
+
+    Defines likelihoods for observed data,
+    given arbitrary components which are
+    linearly added with normalisations. if positive=True,
+    normalisations are forced to be positive.
+    """
 
     def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, gaussprior=None):
         """Initialise model for Poisson data with additive model components.
@@ -505,7 +511,13 @@ class PoissonModel:
 
 
 class GaussModel:
-    """Additive model components with Gaussian measurements."""
+    """Generalized Additive Model with independent Gaussian measurements.
+
+    Defines likelihoods for observed data,
+    given arbitrary components which are
+    linearly added with normalisations. if positive=True,
+    normalisations are forced to be positive.
+    """
 
     def __init__(self, Ncomponents, flat_data, flat_invvar, positive, cond_threshold=1e6):
         """Initialise model for Gaussian data with additive model components.
@@ -680,7 +692,13 @@ class GaussModel:
 
 
 class GPModel:
-    """Additive model components with Gaussian Process correlated measurements."""
+    """Generalized Additive Model with Gaussian Process correlated measurements.
+
+    Defines likelihoods for observed data,
+    given arbitrary components which are
+    linearly added with normalisations. if positive=True,
+    normalisations are forced to be positive.
+    """
 
     def __init__(self, Ncomponents, flat_data, gp, positive, cond_threshold=1e6):
         """Initialise model for Gaussian data with additive model components.
@@ -817,39 +835,3 @@ class GPModel:
         loglike_proposal = loglike_profile + loglike_gauss_proposal
 
         return samples, loglike_proposal, loglike_target
-
-
-def ComponentModel(Ncomponents, flat_data, flat_invvar=None, positive=True, **kwargs):
-    """Generalized Additive Model.
-
-    Defines likelihoods for observed data,
-    given arbitrary components which are
-    linearly added with non-negative normalisations.
-
-    Parameters
-    ----------
-    Ncomponents: int
-        number of model components
-    flat_data: array
-        array of observed data. For the Poisson likelihood functions,
-        must be non-negative integers.
-    flat_invvar: None|array
-        For the Poisson likelihood functions, None.
-        For the Gaussian likelihood function, the inverse variance,
-        `1 / (standard_deviation)^2`, where standard_deviation
-        are the measurement uncertainties.
-    positive: bool
-        whether Gaussian normalisations must be positive.
-    **kwargs: dict
-        additional arguments passed to `PoissonModel` (if flat_invvar is None)
-        or `GaussModel` (otherwise)
-
-    Returns
-    -------
-    model: object
-        `PoissonModel` if flat_invvar is None or otherwise `GaussModel`
-    """
-    if flat_invvar is None:
-        return PoissonModel(Ncomponents, flat_data, positive=positive, **kwargs)
-    else:
-        return GaussModel(Ncomponents, flat_data, flat_invvar, positive=positive, **kwargs)
