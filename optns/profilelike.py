@@ -369,6 +369,9 @@ class PoissonModel:
         self.guess_data_offset = eps_data
         self.guess_model_offset = eps_model
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
+        # you would think that the hessian helps
+        # But actually it is slow. So commented out for now.
+        # self.minimize_kwargs = dict(method="trust-ncg", options=dict(gtol=1e-10), hess=poisson_negloglike_hessian)
         self.Ndata, = flat_data.shape
         self.flat_data = flat_data
         self.flat_invvar = None
@@ -410,7 +413,6 @@ class PoissonModel:
         res = minimize(
             poisson_negloglike, x0, args=(X[:,mask_unique], y, self.gaussprior),
             jac=poisson_negloglike_grad,
-            hess=poisson_negloglike_hessian,
             **self.minimize_kwargs)
         xfull = np.zeros(len(mask_unique)) + -1e50
         xfull[mask_unique] = res.x
