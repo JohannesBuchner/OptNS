@@ -189,6 +189,7 @@ class OptNS:
         assert not self.statmodel.positive or (y_pred > 0).any(axis=1).all(), (y_pred, X, linear_params)
         assert Nsamples == 0 or not self.statmodel.positive or (y_pred > 0).any(axis=0).all(), y_pred
         logprior = self.linear_param_logprior(linear_params)
+        assert np.shape(logprior) in ((), (Nsamples,)), np.shape(logprior)
         params = np.empty((Nsamples, len(nonlinear_params) + Nlinear))
         params[:, :Nlinear] = linear_params
         params[:, Nlinear:] = nonlinear_params.reshape((1, -1))
@@ -197,6 +198,7 @@ class OptNS:
         # assert np.isfinite(logprior).all(), logprior
         # assert Nsamples > 0, Nsamples
         # print('loglratios:', loglike_target - loglike_proposal, loglike_proposal)
+        assert Nsamples == len(loglike_target + logprior - loglike_proposal - np.log(Nsamples))
         return y_pred, params, loglike_target + logprior - loglike_proposal - np.log(Nsamples)
 
     def loglikelihood(self, nonlinear_params):

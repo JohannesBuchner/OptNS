@@ -1,11 +1,13 @@
 """Profile likelihoods."""
 import jax
 import numpy as np
+from jax import jit
 from numpy import exp, log
 from scipy.optimize import minimize
 from scipy.stats import multivariate_normal, norm
 
 jax.config.update("jax_enable_x64", True)
+# def jit(func): return func
 
 
 def unique_components(X, tol=1e-12):
@@ -29,6 +31,7 @@ def unique_components(X, tol=1e-12):
     n_cols = X.shape[1]
     mask = np.ones(n_cols, dtype=bool)
     for i in range(1, n_cols):
+        # mask[i] = (X[:,i] == 0).any()
         for j in range(i):
             if mask[j] and np.allclose(X[:, i], X[:, j], atol=tol, rtol=0):
                 mask[i] = False
@@ -36,100 +39,8 @@ def unique_components(X, tol=1e-12):
     return mask
 
 
-class GaussianPrior:
-    """Gaussian prior probability function."""
-
-    def __init__(self, means, cov):
-        """Initialise.
-
-        Parameters
-        ----------
-        means: array
-            matrix of offsets between pairs of parameters
-        cov: array
-            matrix of covariance between pairs of parameters
-
-        Attributes
-        ----------
-        indicator: array|None
-            index array, one entry in each row should be -1, another 1.
-        offsets: array|None
-            mean offset of L == -1 and L == 1 entries
-        Sigma_inv: array|None
-            inverse covariance of L == -1 and L == 1 entries
-        """
-        ndim, = means.shape
-        assert (ndim, ndim) == cov.shape
-        self.mean = means
-        self.cov_inv = np.linalg.inv(cov)
-        self.norm_const = 0.5 * np.log(np.linalg.det(2 * np.pi * cov))
-
-    def neglogprob(self, lognorms):
-        """Compute negative log-probability.
-
-        Parameters
-        ----------
-        lognorms: array
-            logarithm of normalisations
-
-        Returns
-        -------
-        neglogprob: float
-            negative log-likelihood
-        """
-        delta = lognorms - self.mean
-        return 0.5 * delta @ self.cov_inv @ delta + self.norm_const
-
-    def logprob_many(self, lognorms):
-        """Compute log-probability in a vectorized fashion.
-
-        Parameters
-        ----------
-        lognorms: array
-            2d array of logarithm of normalisations
-
-        Returns
-        -------
-        neglogprob: float
-            log-likelihood
-        """
-        delta = lognorms - self.mean.reshape((1, -1))
-        return -0.5 * np.einsum('ni,ij,nj->n', delta, self.cov_inv, delta) - self.norm_const
-
-    def grad(self, lognorms):
-        """Compute gradient of neglogprob.
-
-        Parameters
-        ----------
-        lognorms: array
-            2d array of logarithm of normalisations
-
-        Returns
-        -------
-        grad: array
-            vector of gradients
-        """
-        delta = lognorms - self.mean
-        return self.cov_inv @ delta
-
-    def hessian(self, lognorms):
-        """Compute Hessian matrix of log-prob w.r.t. lognorms.
-
-        Parameters
-        ----------
-        lognorms: array
-            2d array of logarithm of normalisations
-
-        Returns
-        -------
-        hessian: array
-            Hessian matrix
-        """
-        return self.cov_inv
-
-
-@jax.jit
-def poisson_negloglike(lognorms, X, counts, gaussprior=None):
+@jit
+def _poisson_negloglike(lognorms, X, counts, eps=1e-50):
     """Compute negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -140,8 +51,8 @@ def poisson_negloglike(lognorms, X, counts, gaussprior=None):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
-    gaussprior: GaussPrior
-        Gaussian prior information
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
@@ -149,15 +60,12 @@ def poisson_negloglike(lognorms, X, counts, gaussprior=None):
         negative log-likelihood, neglecting the `1/fac(counts)` constant.
     """
     lam = jax.numpy.exp(lognorms) @ X.T
-    loglike = counts * jax.numpy.log(lam) - lam
-    negloglike = -loglike.sum()
-    if gaussprior is not None:
-        negloglike += gaussprior.neglogprob(lognorms)
-    return negloglike
+    loglike = counts * jax.numpy.log(lam + eps) - lam
+    return -loglike.sum()
 
 
-@jax.jit
-def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
+@jit
+def _poisson_negloglike_grad(lognorms, X, counts, eps=1e-50):
     """Compute gradient of negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -168,8 +76,8 @@ def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
-    gaussprior: GaussPrior
-        Gaussian prior information
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
@@ -178,15 +86,12 @@ def poisson_negloglike_grad(lognorms, X, counts, gaussprior=None):
     """
     norms = jax.numpy.exp(lognorms)
     lam = norms @ X.T
-    diff = 1 - counts / lam
-    grad = (diff @ X) * norms
-    if gaussprior is not None:
-        grad += gaussprior.grad(lognorms)
-    return grad
+    diff = 1 - counts / (lam + eps)
+    return (diff @ X) * norms
 
 
-@jax.jit
-def poisson_negloglike_hessian(lognorms, X, counts, gaussprior=None):
+@jit
+def _poisson_negloglike_hessian(lognorms, X, counts, eps=1e-50):
     """Compute Hessian of negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -197,8 +102,8 @@ def poisson_negloglike_hessian(lognorms, X, counts, gaussprior=None):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
-    gaussprior: GaussPrior
-        Gaussian prior information
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
@@ -207,17 +112,90 @@ def poisson_negloglike_hessian(lognorms, X, counts, gaussprior=None):
     """
     norms = jax.numpy.exp(lognorms)
     lam = norms @ X.T
-    W = (lam - counts) / (lam**2)
+    W = (lam + eps - counts) / ((lam + eps)**2)
 
     H = (X.T * W[None, :]) @ X
     H *= norms[:, None] * norms[None, :]
     assert H.shape == (len(lognorms), len(lognorms))
-    if gaussprior is not None:
-        H += gaussprior.hessian(lognorms)
     return H
 
 
-def poisson_laplace_approximation(lognorms, X, counts, gaussprior=None, eps=1e-6):
+def poisson_negloglike(lognorms, X, counts, priors=[]):
+    """Compute negative log-likelihood of a Poisson distribution.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    priors: list
+        List of prior objects
+
+    Returns
+    -------
+    negloglike: float
+        negative log-likelihood, neglecting the `1/fac(counts)` constant.
+    """
+    negloglike = _poisson_negloglike(lognorms, X, counts)
+    for prior in priors:
+        negloglike += prior.neglogprob(lognorms)
+    return negloglike
+
+
+def poisson_negloglike_grad(lognorms, X, counts, priors=[]):
+    """Compute gradient of negative log-likelihood of a Poisson distribution.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    priors: list
+        List of prior objects
+
+    Returns
+    -------
+    grad: array
+        vector of gradients
+    """
+    grad = _poisson_negloglike_grad(lognorms, X, counts)
+    for prior in priors:
+        grad += prior.grad(lognorms)
+    return grad
+
+
+def poisson_negloglike_hessian(lognorms, X, counts, priors=[]):
+    """Compute Hessian of negative log-likelihood of a Poisson distribution.
+
+    Parameters
+    ----------
+    lognorms: array
+        logarithm of normalisations
+    X: array
+        transposed list of the model component vectors.
+    counts: array
+        non-negative integers giving the observed counts.
+    priors: list
+        List of prior objects
+
+    Returns
+    -------
+    grad: array
+        vector of gradients
+    """
+    H = _poisson_negloglike_hessian(lognorms, X, counts)
+    for prior in priors:
+        H += prior.hessian(lognorms)
+    return H
+
+
+def poisson_laplace_approximation(lognorms, X, counts, priors=[], eps=1e-6):
     """Compute mean and covariance corresponding to Poisson likelihood.
 
     Parameters
@@ -228,8 +206,8 @@ def poisson_laplace_approximation(lognorms, X, counts, gaussprior=None, eps=1e-6
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
-    gaussprior: GaussPrior
-        Gaussian prior information
+    priors: list
+        List of prior objects
     eps: float
         small number to add to hessian before inverting it
 
@@ -246,8 +224,8 @@ def poisson_laplace_approximation(lognorms, X, counts, gaussprior=None, eps=1e-6
     D = np.diag(1 / lambda_hat)
     # Compute the Fisher Information Matrix
     FIM = X.T @ D @ X
-    if gaussprior is not None:
-        FIM += gaussprior.hessian(lognorms)
+    for prior in priors:
+        FIM += prior.hessian(lognorms)
     covariance = np.linalg.inv(FIM)
     """
     mean = jax.numpy.exp(lognorms)
@@ -308,10 +286,11 @@ def gauss_importance_sample_stable(mean, covariance, size, rng):
     return samples_all, rv_logpdf
 
 
-def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
+def poisson_initial_guess_heuristic(X, counts, connection_graph, epsilon_model, epsilon_data=0.1):
     """Guess component normalizations from counts.
 
-    Based on the median count to model ratio of the components.
+    Based on matching the observed counts to each model component,
+    weighted towards the regions where the model component is high.
 
     Parameters
     ----------
@@ -319,6 +298,8 @@ def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
         transposed list of the model component vectors.
     counts: array
         non-negative integers giving the observed counts.
+    connection_graph: list
+        one entry for each component, giving the mask of correlated components.
     epsilon_model: float
         small number to add to model components to avoid division by zero.
     epsilon_data: float
@@ -331,7 +312,18 @@ def poisson_initial_guess_heuristic(X, counts, epsilon_model, epsilon_data=0.1):
     """
     counts_pos = counts.reshape((-1, 1)) + epsilon_data
     components_pos = X + epsilon_model
-    N0 = np.median(counts_pos / components_pos, axis=0)
+    assert (components_pos >= 0).all(), (X.min(), epsilon_model)
+    assert X.shape[1] == len(connection_graph)
+    N0 = np.zeros(len(connection_graph)) - 1
+    for i, rows in enumerate(connection_graph):
+        if N0[i] <= 0:
+            # ratio between model and observation should be met by
+            # N0[rows] = np.median(counts_pos / components_pos[:,rows])
+            # weigh by shape
+            N0[rows] = np.average(counts_pos / components_pos[:,rows], weights=components_pos[:,rows])
+            # N0[rows] = np.mean(counts_pos / components_pos[:,rows])
+            assert np.all(N0[rows] > 0), (N0[rows], counts_pos / components_pos[:,rows], counts_pos, components_pos[:,rows])
+        assert np.all(N0[:i + 1] > 0), (i, rows, N0, connection_graph)
     return np.log(N0)
 
 
@@ -344,7 +336,7 @@ class PoissonModel:
     normalisations are forced to be positive.
     """
 
-    def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, gaussprior=None):
+    def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, priors=[]):
         """Initialise model for Poisson data with additive model components.
 
         Parameters
@@ -359,8 +351,8 @@ class PoissonModel:
             For heuristic initial guess of normalisations, small number to add to model component shapes.
         eps_data: float
             For heuristic initial guess of normalisations, small number to add to counts.
-        gaussprior: GaussPrior
-            Gaussian prior information
+        priors: list
+            List of prior objects
         """
         if not np.all(flat_data.astype(int) == flat_data) or not np.all(flat_data >= 0):
             raise AssertionError("Data are not counts, cannot use Poisson likelihood")
@@ -369,6 +361,7 @@ class PoissonModel:
         self.guess_data_offset = eps_data
         self.guess_model_offset = eps_model
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
+        # self.minimize_kwargs = dict(method="Nelder-Mead", options=dict(fatol=1e-10, maxfev=10000))
         # you would think that the hessian helps
         # But actually it is slow. So commented out for now.
         # self.minimize_kwargs = dict(method="trust-ncg", options=dict(gtol=1e-10), hess=poisson_negloglike_hessian)
@@ -376,7 +369,19 @@ class PoissonModel:
         self.flat_data = flat_data
         self.flat_invvar = None
         self.res = None
-        self.gaussprior = gaussprior
+        self.priors = priors
+        self.mask_unique_all = np.ones(self.Ncomponents, dtype=bool)
+        self.mask_unique = self.mask_unique_all
+
+        self.connection_graph = []
+        for i in range(self.Ncomponents):
+            members = np.zeros(self.Ncomponents, dtype=bool)
+            members[i] = True
+            for prior in self.priors:
+                if hasattr(prior, 'participants'):
+                    if prior.participants[i]:
+                        members[prior.participants] = True
+            self.connection_graph.append(members)
 
     def update_components(self, component_shapes):
         """Set the model components.
@@ -386,15 +391,17 @@ class PoissonModel:
         component_shapes: array
             transposed list of the model component vectors.
         """
-        self.mask_unique = unique_components(component_shapes)
+        if self.priors == []:
+            self.mask_unique = unique_components(component_shapes)
         assert component_shapes.shape == (self.Ndata, self.Ncomponents)
         X = component_shapes
         if not np.isfinite(X).all():
             raise AssertionError("Component shapes are not all finite numbers.")
         if not np.any(np.abs(X) > 0, axis=1).all():
             raise AssertionError("In portions of the data set, all component shapes are zero. Problem is ill-defined.")
-        if not np.any(np.abs(X) > 0, axis=0).all():
-            raise AssertionError(f"Some components are exactly zero everywhere, so normalisation is ill-defined. Components: {np.any(X > 0, axis=0)}.")
+        for members in self.connection_graph:
+            if not np.any(np.abs(X[:,members]) > 0):
+                raise AssertionError(f"Component(s) {np.where(members)[0]} are zero everywhere, so normalisation is ill-defined.")
         if self.positive and not np.all(X >= 0):
             raise AssertionError(f"Components must not be negative. Components: {~np.all(X >= 0, axis=0)}")
         self.X = X
@@ -407,16 +414,20 @@ class PoissonModel:
         mask_unique = self.mask_unique
         x0 = poisson_initial_guess_heuristic(
             self.X[:,self.mask_unique], y,
-            self.guess_model_offset, self.guess_data_offset)
-        # x0_rigorous = poisson_initial_guess(X[:,mask_unique], y, 0.1, 1e-50)
+            [g[self.mask_unique] for g, m in zip(self.connection_graph, self.mask_unique) if m],
+            self.guess_model_offset, self.guess_data_offset,
+        )
         assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
-            poisson_negloglike, x0, args=(X[:,mask_unique], y, self.gaussprior),
+            poisson_negloglike, x0, args=(X[:,mask_unique], y, self.priors),
             jac=poisson_negloglike_grad,
             **self.minimize_kwargs)
-        xfull = np.zeros(len(mask_unique)) + -1e50
-        xfull[mask_unique] = res.x
-        res.x = xfull
+        if not mask_unique.all():
+            xfull = np.zeros(len(mask_unique)) + -1e50
+            xfull[mask_unique] = res.x
+            res.x = xfull
+        if not res.success:
+            print(res)
         self.res = res
 
     def loglike(self):
@@ -458,7 +469,7 @@ class PoissonModel:
         """
         if self.res is None:
             raise AssertionError('need to call optimize() first!')
-        return poisson_laplace_approximation(self.res.x, self.X, self.flat_data, self.gaussprior)
+        return poisson_laplace_approximation(self.res.x, self.X, self.flat_data, self.priors)
 
     def sample(self, size, rng=np.random):
         """Sample from Laplace approximation to likelihood function.
@@ -507,8 +518,8 @@ class PoissonModel:
         lam = samples @ X.T
         # target probability function: Poisson
         loglike_target = np.sum(counts * log(lam) - lam, axis=1)
-        if self.gaussprior is not None:
-            loglike_target += self.gaussprior.logprob_many(np.log(samples))
+        for prior in self.priors:
+            loglike_target += prior.logprob_many(np.log(samples))
         return samples, loglike_proposal, loglike_target
 
 

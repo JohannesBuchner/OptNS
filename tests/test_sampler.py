@@ -23,7 +23,7 @@ def compute_model_components0(params):
 def nonlinear_param_transform0(params):
     return params
 def linear_param_logprior0(params):
-    return 0
+    return params[:,0] * 0
 
 def test_trivial_OLS():
     np.random.seed(431)
