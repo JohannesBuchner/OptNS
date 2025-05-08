@@ -31,6 +31,10 @@ class GaussianPrior:
         """Make a string representation."""
         return f'GaussianPrior({self.mean}, {self.stdevs})'
 
+    def __repr__(self):
+        """Make a string representation."""
+        return f'GaussianPrior({self.mean}, {self.stdevs})'
+
     def neglogprob(self, lognorms):
         """Compute negative log-probability.
 
@@ -112,9 +116,16 @@ class SimilarityPrior:
         self.participants = participants
         self.std = float(std)
         ones = np.ones((n, n)) / n
-        self.H = (np.eye(n) - ones) / std**2
+        self.H = np.zeros((ndim, ndim))
+        H_inner = (np.eye(n) - ones) / std**2
+        for i, j in enumerate(np.where(participants)[0]):
+            self.H[j,participants] = H_inner[i,:]
 
     def __str__(self):
+        """Make a string representation."""
+        return f'SimilarityPrior({self.participants * 1}, {self.std})'
+
+    def __repr__(self):
         """Make a string representation."""
         return f'SimilarityPrior({self.participants * 1}, {self.std})'
 

@@ -60,8 +60,8 @@ def _poisson_negloglike(lognorms, X, counts, eps=1e-50):
         negative log-likelihood, neglecting the `1/fac(counts)` constant.
     """
     lam = jax.numpy.exp(lognorms) @ X.T
-    loglike = counts * jax.numpy.log(lam + eps) - lam
-    return -loglike.sum()
+    loglike = jax.numpy.dot(counts, jax.numpy.log(lam + eps)) - lam.sum()
+    return -loglike
 
 
 @jit
@@ -120,7 +120,7 @@ def _poisson_negloglike_hessian(lognorms, X, counts, eps=1e-50):
     return H
 
 
-def poisson_negloglike(lognorms, X, counts, priors=[]):
+def poisson_negloglike(lognorms, X, counts, priors=[], eps=1e-50):
     """Compute negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -133,19 +133,21 @@ def poisson_negloglike(lognorms, X, counts, priors=[]):
         non-negative integers giving the observed counts.
     priors: list
         List of prior objects
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
     negloglike: float
         negative log-likelihood, neglecting the `1/fac(counts)` constant.
     """
-    negloglike = _poisson_negloglike(lognorms, X, counts)
+    negloglike = _poisson_negloglike(lognorms, X, counts, eps=eps)
     for prior in priors:
         negloglike += prior.neglogprob(lognorms)
     return negloglike
 
 
-def poisson_negloglike_grad(lognorms, X, counts, priors=[]):
+def poisson_negloglike_grad(lognorms, X, counts, priors=[], eps=1e-50):
     """Compute gradient of negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -158,19 +160,21 @@ def poisson_negloglike_grad(lognorms, X, counts, priors=[]):
         non-negative integers giving the observed counts.
     priors: list
         List of prior objects
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
     grad: array
         vector of gradients
     """
-    grad = _poisson_negloglike_grad(lognorms, X, counts)
+    grad = _poisson_negloglike_grad(lognorms, X, counts, eps=eps)
     for prior in priors:
         grad += prior.grad(lognorms)
     return grad
 
 
-def poisson_negloglike_hessian(lognorms, X, counts, priors=[]):
+def poisson_negloglike_hessian(lognorms, X, counts, priors=[], eps=1e-50):
     """Compute Hessian of negative log-likelihood of a Poisson distribution.
 
     Parameters
@@ -183,13 +187,15 @@ def poisson_negloglike_hessian(lognorms, X, counts, priors=[]):
         non-negative integers giving the observed counts.
     priors: list
         List of prior objects
+    eps: float
+        small value to add to model component to avoid log(0)
 
     Returns
     -------
     grad: array
         vector of gradients
     """
-    H = _poisson_negloglike_hessian(lognorms, X, counts)
+    H = _poisson_negloglike_hessian(lognorms, X, counts, eps=eps)
     for prior in priors:
         H += prior.hessian(lognorms)
     return H
@@ -336,7 +342,7 @@ class PoissonModel:
     normalisations are forced to be positive.
     """
 
-    def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, priors=[]):
+    def __init__(self, Ncomponents, flat_data, positive=True, eps_model=0.1, eps_data=0.1, eps_log=1e-50, priors=[]):
         """Initialise model for Poisson data with additive model components.
 
         Parameters
@@ -351,6 +357,8 @@ class PoissonModel:
             For heuristic initial guess of normalisations, small number to add to model component shapes.
         eps_data: float
             For heuristic initial guess of normalisations, small number to add to counts.
+        eps_log: float
+            small value to add to model component to avoid log(0)
         priors: list
             List of prior objects
         """
@@ -360,6 +368,7 @@ class PoissonModel:
         self.positive = positive
         self.guess_data_offset = eps_data
         self.guess_model_offset = eps_model
+        self.eps_log = eps_log
         self.minimize_kwargs = dict(method="L-BFGS-B", options=dict(ftol=1e-10, maxfun=10000))
         # self.minimize_kwargs = dict(method="Nelder-Mead", options=dict(fatol=1e-10, maxfev=10000))
         # you would think that the hessian helps
@@ -419,7 +428,7 @@ class PoissonModel:
         )
         assert np.isfinite(x0).all(), (x0, y, X, mask_unique)
         res = minimize(
-            poisson_negloglike, x0, args=(X[:,mask_unique], y, self.priors),
+            poisson_negloglike, x0, args=(X[:,mask_unique], y, self.priors, self.eps_log),
             jac=poisson_negloglike_grad,
             **self.minimize_kwargs)
         if not mask_unique.all():

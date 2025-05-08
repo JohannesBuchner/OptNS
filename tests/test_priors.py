@@ -8,7 +8,7 @@ def test_gaussian_prior():
     means = np.array([1.23, 4.56])
     stdevs = np.array([1, 0.1])
     gauss = GaussianPrior(means, stdevs)
-    print(gauss)
+    print(gauss, repr(gauss))
     rva = scipy.stats.norm(1.23, 1)
     rvb = scipy.stats.norm(4.56, 0.1)
     logpdfa = rva.logpdf(2.0) - rva.logpdf(rva.mean())
@@ -25,7 +25,7 @@ def test_gaussian_prior():
 def test_similarity_prior():
     participants = np.array([False, True, True])
     prior = SimilarityPrior(participants, 0.01)
-    print(prior)
+    print(prior, repr(prior))
     assert prior.neglogprob(np.array([1.23, 4.56, 4.56])) == 0
     lp = -prior.neglogprob(np.array([1.23, 4.56, 4.55]))
     assert_allclose(lp, -0.5 * 0.5)
@@ -35,6 +35,12 @@ def test_similarity_prior():
     assert grad[1] > 0, grad
     assert grad[2] < 0, grad
     n = participants.sum()
-    ones = np.ones((n, n)) / n
-    H = (np.eye(n) - ones) / 0.01**2
+    #ones = np.ones((n, n)) / n
+    #H = (np.eye(n) - ones) / 0.01**2
+    H_unnormed = np.array([
+        [0, 0, 0],
+        [0, 1 - 1/2, -1/2],
+        [0, -1/2, 1 - 1/2],
+    ])
+    H = H_unnormed / 0.01**2
     assert_allclose(prior.hessian(None), H)
